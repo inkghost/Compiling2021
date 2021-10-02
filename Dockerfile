@@ -1,4 +1,5 @@
 FROM gcc:10
+COPY ./* /app/
 WORKDIR /app/
-COPY main.c ./
 RUN gcc main.c -o main
+WORKDIR /app/output
