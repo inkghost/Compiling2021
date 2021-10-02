@@ -75,7 +75,7 @@ int main()
         else
         {
             printf("Err\n");
-            return 1;
+            return 0;
         }
     }
 
