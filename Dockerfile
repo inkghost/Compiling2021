@@ -1,4 +1,4 @@
-FROM gcc:10
+FROM g++:10
 WORKDIR /app/
-COPY main.c ./
-RUN gcc main.c -o main
+COPY main.cpp ./
+RUN g++ main.cpp -o main
