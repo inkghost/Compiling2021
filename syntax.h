@@ -13,7 +13,7 @@ void CompUnit(FILE *fp_input, FILE *fp_ir)
 {
     fprintf(fp_ir, "define dso_local ");
     FuncDef(fp_input, fp_ir);
-    FuncDef(fp_input, fp_ir);
+    nextsym(fp_input);
     if (sym.type != 11)
     {
         throw "Error";
