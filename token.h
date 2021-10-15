@@ -1,14 +1,41 @@
 #include <cstdio>
 #include <cctype>
 #include <cstring>
+#include <sstream>
+#include <cstdlib>
 
-int nextsym(FILE *fp_input)
+using namespace std;
+
+bool isNonzeroDigit(int);
+
+bool isOctalDigit(int);
+
+bool isHexadecimalDigit(int);
+
+bool isSymbol(int);
+
+int hex2dec(char *);
+
+int oct2dec(char *);
+
+typedef struct lexical
+{
+    int type;
+    int value;
+    char ident[128];
+} Lexical;
+
+Lexical sym;
+
+Lexical nextsym(FILE *fp_input)
 {
     char first_char;
     char next_char;
     char token[128];
 
-    while (!(first_char = fgetc(fp_input)))
+    sym.type = -1;
+
+    while (~(first_char = fgetc(fp_input)))
     {
         // 标识符
         if (isalpha(first_char))
@@ -24,9 +51,21 @@ int nextsym(FILE *fp_input)
                 }
                 else
                 {
-                    printf("Ident: %s\n", token);
                     ungetc(next_char, fp_input);
-                    break;
+
+                    if (strcmp(token, "int") == 0)
+                        sym.type = 1;
+                    else if (strcmp(token, "main") == 0)
+                        sym.type = 2;
+                    else if (strcmp(token, "return") == 0)
+                        sym.type = 3;
+                    else
+                    {
+                        sym.type = 10;
+                        strcpy(sym.ident, token);
+                    }
+
+                    return sym;
                 }
             }
         }
@@ -44,9 +83,10 @@ int nextsym(FILE *fp_input)
                 }
                 else
                 {
-                    printf("decimal-const: %s\n", token);
                     ungetc(next_char, fp_input);
-                    break;
+                    sym.type = 9;
+                    sym.value = atoi(token);
+                    return sym;
                 }
             }
         }
@@ -73,16 +113,16 @@ int nextsym(FILE *fp_input)
                         }
                         else
                         {
-                            printf("hexadecimal-const: %s\n", token);
                             ungetc(next_char, fp_input);
-                            break;
+                            sym.type = 9;
+                            sym.value = hex2dec(token);
+                            return sym;
                         }
                     }
                 }
                 else
                 {
-                    printf("Err\n");
-                    ungetc(next_char, fp_input);
+                    return sym;
                 }
             }
             // 八进制
@@ -98,21 +138,42 @@ int nextsym(FILE *fp_input)
                     }
                     else
                     {
-                        printf("octal-const: %s\n", token);
                         ungetc(next_char, fp_input);
-                        break;
+                        sym.type = 9;
+                        sym.value = oct2dec(token);
+                        return sym;
                     }
                 }
             }
             else
             {
-                printf("octal-const: %s\n", token);
                 ungetc(next_char, fp_input);
+                sym.type = 9;
+                sym.value = oct2dec(token);
+                return sym;
             }
         }
         else if (isSymbol(first_char))
         {
-            printf("symbol: %c\n", first_char);
+            switch (first_char)
+            {
+            case '(':
+                sym.type = 4;
+                break;
+            case ')':
+                sym.type = 5;
+                break;
+            case '{':
+                sym.type = 6;
+                break;
+            case '}':
+                sym.type = 7;
+                break;
+            case ';':
+                sym.type = 8;
+                break;
+            }
+            return sym;
         }
         else if (isspace(first_char))
         {
@@ -120,12 +181,13 @@ int nextsym(FILE *fp_input)
         }
         else
         {
-            printf("Err\n");
-            return 0;
+            return sym;
         }
     }
 
-    return 0;
+    sym.type = 11;
+
+    return sym;
 }
 
 bool isNonzeroDigit(int c)
@@ -146,4 +208,22 @@ bool isHexadecimalDigit(int c)
 bool isSymbol(int c)
 {
     return c == ';' || c == '(' || c == ')' || c == '{' || c == '}';
+}
+
+int hex2dec(char *hexstr)
+{
+    int decn;
+    stringstream ss;
+    ss.str(hexstr);
+    ss >> hex >> decn;
+    return decn;
+}
+
+int oct2dec(char *octstr)
+{
+    int decn;
+    stringstream ss;
+    ss.str(octstr);
+    ss >> oct >> decn;
+    return decn;
 }
