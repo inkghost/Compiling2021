@@ -175,6 +175,37 @@ Lexical nextsym(FILE *fp_input)
             }
             return sym;
         }
+        // 消除注释
+        else if (first_char == '/')
+        {
+            next_char = fgetc(fp_input);
+            if (next_char == '/')
+            {
+                while (~(next_char = fgetc(fp_input)))
+                {
+                    if (next_char == '\n')
+                        break;
+                }
+            }
+            else if (next_char == '*')
+            {
+                while (~(next_char = fgetc(fp_input)))
+                {
+                    if (next_char == '*')
+                    {
+                        next_char = fgetc(fp_input);
+                        if (next_char == '/')
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                return sym;
+            }
+        }
         else if (isspace(first_char))
         {
             continue;
