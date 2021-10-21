@@ -2,35 +2,42 @@
 
 using namespace std;
 
-void CompUnit(FILE *, FILE *);
-void FuncDef(FILE *, FILE *);
-void FuncType(FILE *, FILE *);
-void Ident(FILE *, FILE *);
-void Block(FILE *, FILE *);
-void Stmt(FILE *, FILE *);
+void CompUnit();
+void FuncDef();
+void FuncType();
+void Ident();
+void Block();
+void Stmt();
+void Exp();
+void AddExp();
+void MulExp();
+void UnaryExp();
+void PrimaryExp();
+void UnaryOp();
 
-void CompUnit(FILE *fp_input, FILE *fp_ir)
+void CompUnit()
 {
     fprintf(fp_ir, "define dso_local ");
-    FuncDef(fp_input, fp_ir);
-    nextsym(fp_input);
-    if (sym.type != 11)
+
+    nextsym();
+    FuncDef();
+
+    nextsym();
+    if (sym.type != 34)
     {
         throw "Error";
     }
-    
 }
 
-void FuncDef(FILE *fp_input, FILE *fp_ir)
+void FuncDef()
 {
-    nextsym(fp_input);
-    FuncType(fp_input, fp_ir);
+    FuncType();
 
-    nextsym(fp_input);
-    Ident(fp_input, fp_ir);
+    nextsym();
+    Ident();
 
-    nextsym(fp_input);
-    if (sym.type == 4)
+    nextsym();
+    if (sym.type == 9)
     {
         fprintf(fp_ir, "(");
     }
@@ -39,8 +46,8 @@ void FuncDef(FILE *fp_input, FILE *fp_ir)
         throw "Error";
     }
 
-    nextsym(fp_input);
-    if (sym.type == 5)
+    nextsym();
+    if (sym.type == 10)
     {
         fprintf(fp_ir, ")");
     }
@@ -49,11 +56,11 @@ void FuncDef(FILE *fp_input, FILE *fp_ir)
         throw "Error";
     }
 
-    nextsym(fp_input);
-    Block(fp_input, fp_ir);
+    nextsym();
+    Block();
 }
 
-void FuncType(FILE *fp_input, FILE *fp_ir)
+void FuncType()
 {
     if (sym.type == 1)
     {
@@ -65,11 +72,11 @@ void FuncType(FILE *fp_input, FILE *fp_ir)
     }
 }
 
-void Ident(FILE *fp_input, FILE *fp_ir)
+void Ident()
 {
-    if (sym.type == 2)
+    if (sym.type == 33)
     {
-        fprintf(fp_ir, "@main");
+        fprintf(fp_ir, "@%s", sym.ident);
     }
     else
     {
@@ -77,9 +84,9 @@ void Ident(FILE *fp_input, FILE *fp_ir)
     }
 }
 
-void Block(FILE *fp_input, FILE *fp_ir)
+void Block()
 {
-    if (sym.type == 6)
+    if (sym.type == 13)
     {
         fprintf(fp_ir, "{\n    ");
     }
@@ -88,11 +95,11 @@ void Block(FILE *fp_input, FILE *fp_ir)
         throw "Error";
     }
 
-    nextsym(fp_input);
-    Stmt(fp_input, fp_ir);
+    nextsym();
+    Stmt();
 
-    nextsym(fp_input);
-    if (sym.type == 7)
+    nextsym();
+    if (sym.type == 14)
     {
         fprintf(fp_ir, "\n}");
     }
@@ -102,9 +109,9 @@ void Block(FILE *fp_input, FILE *fp_ir)
     }
 }
 
-void Stmt(FILE *fp_input, FILE *fp_ir)
+void Stmt()
 {
-    if (sym.type == 3)
+    if (sym.type == 8)
     {
         fprintf(fp_ir, "ret ");
     }
@@ -113,8 +120,8 @@ void Stmt(FILE *fp_input, FILE *fp_ir)
         throw "Error";
     }
 
-    nextsym(fp_input);
-    if (sym.type == 9)
+    nextsym();
+    if (sym.type == 32)
     {
         fprintf(fp_ir, "i32 %d", sym.value);
     }
@@ -123,8 +130,8 @@ void Stmt(FILE *fp_input, FILE *fp_ir)
         throw "Error";
     }
 
-    nextsym(fp_input);
-    if (sym.type != 8)
+    nextsym();
+    if (sym.type != 15)
     {
         throw "Error";
     }

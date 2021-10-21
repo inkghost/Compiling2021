@@ -13,13 +13,12 @@ int main(int argc, char **argv)
     }
 
     // 设置输入输出文件
-    FILE *fp_input, *fp_ir;
     fp_input = fopen(argv[1], "r");
     fp_ir = fopen(argv[2], "w");
 
     try
     {
-        CompUnit(fp_input, fp_ir);
+        CompUnit();
     }
     catch(const char* error)
     {
