@@ -220,6 +220,43 @@ void UnaryExp()
         UnaryOp();
         nextsym();
         UnaryExp();
+
+        struct ExpItem num = exp_stack.top();
+        exp_stack.pop();
+        if (num.type != 1 && num.type != 3)
+        {
+            throw "Error";
+        }
+
+        if (exp_stack.empty())
+        {
+            exp_stack.push(num);
+            return;
+        }
+
+        struct ExpItem op = exp_stack.top();
+        exp_stack.pop();
+        if (op.type != 4)
+        {
+            exp_stack.push(op);
+            exp_stack.push(num);
+            return;
+        }
+        else if (op.value == 19)
+        {
+            if (num.type == 1)
+            {
+                fprintf(fp_ir, "    %%%d = sub i32 0, %d\n", ++temp_register, num.value);
+            }
+            else
+            {
+                fprintf(fp_ir, "    %%%d = sub i32 0, %%%d\n", ++temp_register, num.value);
+            }
+            num.type = 3;
+            num.value = temp_register;
+        }
+
+        exp_stack.push(num);
     }
     else
     {
@@ -235,45 +272,6 @@ void PrimaryExp()
         Exp();
         if (sym.type == 10)
         {
-            while (true)
-            {
-                struct ExpItem num = exp_stack.top();
-                exp_stack.pop();
-                if (num.type != 1 && num.type != 3)
-                {
-                    throw "Error";
-                }
-
-                if (exp_stack.empty())
-                {
-                    exp_stack.push(num);
-                    break;
-                }
-
-                struct ExpItem op = exp_stack.top();
-                exp_stack.pop();
-                if (op.type != 4)
-                {
-                    exp_stack.push(op);
-                    exp_stack.push(num);
-                    break;
-                }
-                else if (op.value == 19)
-                {
-                    if (num.type == 1)
-                    {
-                        fprintf(fp_ir, "    %%%d = sub i32 0, %d\n", ++temp_register, num.value);
-                    }
-                    else
-                    {
-                        fprintf(fp_ir, "    %%%d = sub i32 0, %%%d\n", ++temp_register, num.value);
-                    }
-                    num.type = 3;
-                    num.value = temp_register;
-                }
-
-                exp_stack.push(num);
-            }
             nextsym();
         }
         else
