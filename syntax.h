@@ -534,12 +534,12 @@ void AddExp()
     MulExp();
     while (true)
     {
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
         // 使用 MulExp() 中最后读入的 sym 即可
         if (sym.type != 18 && sym.type != 19)
         {
             break;
         }
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -555,11 +555,11 @@ void MulExp()
     UnaryExp();
     while (true)
     {
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
         if (sym.type != 20 && sym.type != 21 && sym.type != 22)
         {
             break;
         }
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
