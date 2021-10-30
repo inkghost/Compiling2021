@@ -29,7 +29,7 @@ typedef struct lexical
 {
     int type;
     int value;
-    char ident[128];
+    char ident[4096];
 } Lexical;
 
 Lexical sym;
@@ -38,7 +38,7 @@ Lexical nextsym()
 {
     char first_char;
     char next_char;
-    char token[128];
+    char token[4096];
     int symbolRet = -1;
 
     sym.type = -1;

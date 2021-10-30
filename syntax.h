@@ -40,8 +40,10 @@ void PrintSpace();
 void FuncMapInit();
 // 函数调用分析
 void FuncCall();
-// 判断该变量是否是常量
-void IsConst();
+// 记录运算过程中是否出现变量
+bool have_var_in_cal;
+// 记录该变量是否是常量
+bool this_is_const;
 
 struct ExpItem
 {
@@ -205,7 +207,12 @@ void ConstDef()
 
 void ConstInitVal()
 {
+    have_var_in_cal = false;
     ConstExp();
+    if (have_var_in_cal)
+    {
+        throw "Error";
+    }
 }
 
 void ConstExp()
@@ -407,10 +414,13 @@ void Stmt()
         {
             sym = tmp_sym;
 
-            //  判断该变量是否是常量
-            IsConst();
-
+            this_is_const = false;
             int lval_register = LVal();
+
+            if (this_is_const)
+            {
+                throw "Error";
+            }
 
             nextsym();
             Exp();
@@ -481,6 +491,15 @@ int LVal()
         {
             throw "Error";
         }
+    }
+
+    if ((*var_it).second.is_const)
+    {
+        this_is_const = true;
+    }
+    else
+    {
+        have_var_in_cal = true;
     }
 
     return (*var_it).second.register_num;
@@ -905,48 +924,4 @@ void FuncCall()
     }
 
     fprintf(fp_ir, ")\n");
-}
-
-void IsConst()
-{
-    if (sym.type != 33)
-    {
-        throw "Error";
-    }
-
-    bool is_declared = false;
-
-    // 检查变量是否被声明
-    var_it = var_map.find((string)sym.ident);
-    if (var_it != var_map.end())
-    {
-        is_declared = true;
-    }
-
-    if (!is_declared)
-    {
-        for (list<map<string, struct VarItem>>::reverse_iterator it = var_map_list.rbegin(); it != var_map_list.rend(); ++it)
-        {
-            var_it = (*it).find((string)sym.ident);
-            if (var_it != (*it).end())
-            {
-                is_declared = true;
-                break;
-            }
-        }
-    }
-
-    if (!is_declared)
-    {
-        var_it = global_var_map.find((string)sym.ident);
-        if (var_it == global_var_map.end())
-        {
-            throw "Error";
-        }
-    }
-
-    if ((*var_it).second.is_const)
-    {
-        throw "Error";
-    }
 }
