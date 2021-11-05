@@ -34,6 +34,9 @@ typedef struct lexical
 
 Lexical sym;
 
+// 回退token
+void backsysm(Lexical);
+
 Lexical nextsym()
 {
     char first_char;
@@ -285,7 +288,9 @@ int isDoubleSymbol(int c)
         if (next_char == '=')
         {
             ret = 28;
-        }else {
+        }
+        else
+        {
             ungetc(next_char, fp_input);
             ret = 17;
         }
@@ -296,7 +301,9 @@ int isDoubleSymbol(int c)
         if (next_char == '=')
         {
             ret = 29;
-        }else {
+        }
+        else
+        {
             ungetc(next_char, fp_input);
             ret = 23;
         }
@@ -307,7 +314,9 @@ int isDoubleSymbol(int c)
         if (next_char == '=')
         {
             ret = 26;
-        }else {
+        }
+        else
+        {
             ungetc(next_char, fp_input);
             ret = 24;
         }
@@ -318,7 +327,9 @@ int isDoubleSymbol(int c)
         if (next_char == '=')
         {
             ret = 27;
-        }else {
+        }
+        else
+        {
             ungetc(next_char, fp_input);
             ret = 25;
         }
@@ -329,7 +340,9 @@ int isDoubleSymbol(int c)
         if (next_char == '&')
         {
             ret = 30;
-        }else {
+        }
+        else
+        {
             ret = -1;
         }
     }
@@ -339,7 +352,9 @@ int isDoubleSymbol(int c)
         if (next_char == '|')
         {
             ret = 31;
-        }else {
+        }
+        else
+        {
             ret = -1;
         }
     }
@@ -389,5 +404,122 @@ void identJudge(char *token)
     {
         sym.type = 33;
         strcpy(sym.ident, token);
+    }
+}
+
+void backsysm(Lexical old_sym)
+{
+    string token = "";
+    switch (old_sym.type)
+    {
+    case 0:
+        token = "const";
+        break;
+    case 1:
+        token = "int";
+        break;
+    case 2:
+        token = "void";
+        break;
+    case 3:
+        token = "if";
+        break;
+    case 4:
+        token = "else";
+        break;
+    case 5:
+        token = "while";
+        break;
+    case 6:
+        token = "break";
+        break;
+    case 7:
+        token = "continue";
+        break;
+    case 8:
+        token = "return";
+        break;
+    case 9:
+        token = "(";
+        break;
+    case 10:
+        token = ")";
+        break;
+    case 11:
+        token = "[";
+        break;
+    case 12:
+        token = "]";
+        break;
+    case 13:
+        token = "{";
+        break;
+    case 14:
+        token = "}";
+        break;
+    case 15:
+        token = ";";
+        break;
+    case 16:
+        token = ",";
+        break;
+    case 17:
+        token = "=";
+        break;
+    case 18:
+        token = "+";
+        break;
+    case 19:
+        token = "-";
+        break;
+    case 20:
+        token = "*";
+        break;
+    case 21:
+        token = "/";
+        break;
+    case 22:
+        token = "%";
+        break;
+    case 23:
+        token = "!";
+        break;
+    case 24:
+        token = "<";
+        break;
+    case 25:
+        token = ">";
+        break;
+    case 26:
+        token = "<=";
+        break;
+    case 27:
+        token = ">=";
+        break;
+    case 28:
+        token = "==";
+        break;
+    case 29:
+        token = "!=";
+        break;
+    case 30:
+        token = "&&";
+        break;
+    case 31:
+        token = "||";
+        break;
+    case 32:
+        token = to_string(old_sym.value);
+        break;
+    case 33:
+        token = old_sym.ident;
+        break;
+    default:
+        break;
+    }
+
+    for (int i = token.size() - 1; i >= 0; i--)
+    {
+        ungetc(token[i], fp_input);
     }
 }

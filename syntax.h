@@ -22,35 +22,52 @@ void Block();
 void BlockItem();
 void Stmt();
 void Exp();
+void Cond();
 int LVal();
-void AddExp();
-void MulExp();
-void UnaryExp();
 void PrimaryExp();
-void FuncRParams(int);
+void UnaryExp();
 void UnaryOp();
+void FuncRParams(int);
+void MulExp();
+void AddExp();
+void RelExp();
+void EqExp();
+void LAndExp();
+void LOrExp();
 
 // 四则运算
 void Operation();
-// 打印 ident
-void Ident();
+// 非运算
+void NotOperation(struct ExpItem);
+// 比较运算
+void CmpOperation();
+// 位运算
+void BitOperation();
 // 打印嵌套空格
 void PrintSpace();
 // 初始化 FuncMap
 void FuncMapInit();
 // 函数调用分析
 void FuncCall();
+// 将栈顶元素转化为 i1
+void toBool();
+// 将栈顶元素转化为 i32
+void toInt();
 // 记录运算过程中是否出现变量
 bool have_var_in_cal;
 // 记录该变量是否是常量
 bool this_is_const;
+// 记录是否处于 Cond 判断中
+bool is_in_cond;
+// 记录基础块个数
+int basic_block;
 
 struct ExpItem
 {
-    // 1 操作数，2 运算符，3 临时寄存器, 4 正负号运算
+    // 1 操作数，2 运算符，3 临时寄存器, 4 正负号运算, 5 布尔值
     int type;
     // 操作数的值
-    // 运算符：18 +,19 -,20 *,21 /,22 %
+    // 运算符：18 +,19 -,20 *,21 /,22 %, 23 !, 24 <, 25 >, 26 <=, 27 >=, 28 ==, 29 !=, 30 &&, 31 ||
     // 临时寄存器的次序
     int value;
 };
@@ -89,8 +106,6 @@ struct ExpItem *exp_stack_tmp;
 stack<struct ExpItem> exp_stack;
 // 变量 map 队列
 list<map<string, struct VarItem>> var_map_list;
-// 嵌套层数
-int nest_number;
 
 void CompUnit()
 {
@@ -297,7 +312,14 @@ void FuncDef()
     FuncType();
 
     nextsym();
-    Ident();
+    if (sym.type == 33)
+    {
+        fprintf(fp_ir, "@%s", sym.ident);
+    }
+    else
+    {
+        throw "Error";
+    }
 
     nextsym();
     if (sym.type == 9)
@@ -319,8 +341,12 @@ void FuncDef()
         throw "Error";
     }
 
+    fprintf(fp_ir, "{\n");
+
     nextsym();
     Block();
+
+    fprintf(fp_ir, "\n}");
 }
 
 void FuncType()
@@ -339,26 +365,19 @@ void Block()
 {
     var_map_list.push_back(var_map);
     var_map.clear();
-    nest_number++;
 
-    if (sym.type == 13)
-    {
-        fprintf(fp_ir, "{\n");
-    }
-    else
+    if (sym.type != 13)
     {
         throw "Error";
     }
 
-    do
+    nextsym();
+    while (sym.type != 14)
     {
-        nextsym();
         BlockItem();
-    } while (sym.type != 14);
+        nextsym();
+    }
 
-    fprintf(fp_ir, "\n}");
-
-    nest_number--;
     var_map = var_map_list.back();
     var_map_list.pop_back();
 }
@@ -398,7 +417,78 @@ void Stmt()
         }
 
         exp_stack.pop();
+
+        if (sym.type != 15)
+        {
+            throw "Error";
+        }
+    }
+    else if (sym.type == 13)
+    {
+        Block();
+    }
+    // 条件语句
+    else if (sym.type == 3)
+    {
         nextsym();
+        if (sym.type != 9)
+        {
+            throw "Error";
+        }
+
+        nextsym();
+        Cond();
+
+        if (sym.type != 10)
+        {
+            throw "Error";
+        }
+
+        struct ExpItem cond = exp_stack.top();
+        if (cond.type != 5)
+        {
+            throw "Error";
+        }
+        exp_stack.pop();
+
+        int if_block = ++basic_block;
+        int out_block = ++basic_block;
+
+        PrintSpace();
+        fprintf(fp_ir, "br i1 %%%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, if_block, out_block);
+
+        fprintf(fp_ir, "basic_block_%d:\n", if_block);
+
+        nextsym();
+        Stmt();
+
+        Lexical tmp_sym = sym;
+        nextsym();
+
+        if (sym.type == 4)
+        {
+            int else_block = out_block;
+            out_block = ++basic_block;
+
+            PrintSpace();
+            fprintf(fp_ir, "br label %%basic_block_%d\n", out_block);
+            fprintf(fp_ir, "basic_block_%d:\n", else_block);
+
+            nextsym();
+            Stmt();
+
+            PrintSpace();
+            fprintf(fp_ir, "br label %%basic_block_%d\n", out_block);
+        }
+        else
+        {
+            swap(tmp_sym, sym);
+            backsysm(tmp_sym);
+            PrintSpace();
+            fprintf(fp_ir, "br label %%basic_block_%d\n", out_block);
+        }
+
+        fprintf(fp_ir, "basic_block_%d:\n", out_block);
     }
     else if (sym.type == 33)
     {
@@ -442,17 +532,34 @@ void Stmt()
 
             exp_stack.pop();
         }
+
+        if (sym.type != 15)
+        {
+            throw "Error";
+        }
     }
     else if (sym.type != 15)
     {
         Exp();
         exp_stack.pop();
+
+        if (sym.type != 15)
+        {
+            throw "Error";
+        }
     }
 }
 
 void Exp()
 {
     AddExp();
+}
+
+void Cond()
+{
+    is_in_cond = true;
+    LOrExp();
+    is_in_cond = false;
 }
 
 int LVal()
@@ -548,54 +655,13 @@ void PrimaryExp()
     }
 }
 
-void AddExp()
-{
-    MulExp();
-    while (true)
-    {
-        // 使用 MulExp() 中最后读入的 sym 即可
-        if (sym.type != 18 && sym.type != 19)
-        {
-            break;
-        }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
-        exp_stack_tmp->type = 2;
-        exp_stack_tmp->value = sym.type;
-        exp_stack.push(*exp_stack_tmp);
-        nextsym();
-        MulExp();
-
-        Operation();
-    }
-}
-
-void MulExp()
-{
-    UnaryExp();
-    while (true)
-    {
-        if (sym.type != 20 && sym.type != 21 && sym.type != 22)
-        {
-            break;
-        }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
-        exp_stack_tmp->type = 2;
-        exp_stack_tmp->value = sym.type;
-        exp_stack.push(*exp_stack_tmp);
-        nextsym();
-        UnaryExp();
-
-        Operation();
-    }
-}
-
 void UnaryExp()
 {
     if (sym.type == 9 || sym.type == 32)
     {
         PrimaryExp();
     }
-    else if (sym.type == 18 || sym.type == 19)
+    else if (sym.type == 18 || sym.type == 19 || (is_in_cond && sym.type == 23))
     {
         UnaryOp();
         nextsym();
@@ -616,6 +682,7 @@ void UnaryExp()
 
         struct ExpItem op = exp_stack.top();
         exp_stack.pop();
+        // 进行单目前缀运算
         if (op.type != 4)
         {
             exp_stack.push(op);
@@ -635,6 +702,22 @@ void UnaryExp()
             }
             num.type = 3;
             num.value = temp_register;
+        }
+        else if (is_in_cond && op.value == 23)
+        {
+            bool doNotOperation = true;
+            op = exp_stack.top();
+            while (op.value == 23)
+            {
+                doNotOperation = !doNotOperation;
+                exp_stack.pop();
+                op = exp_stack.top();
+            }
+            if (doNotOperation)
+            {
+                NotOperation(num);
+                return;
+            }
         }
 
         exp_stack.push(num);
@@ -679,6 +762,21 @@ void UnaryExp()
     }
 }
 
+void UnaryOp()
+{
+    if (sym.type == 18 || sym.type == 19 || (is_in_cond && sym.type == 23))
+    {
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp->type = 4;
+        exp_stack_tmp->value = sym.type;
+        exp_stack.push(*exp_stack_tmp);
+    }
+    else
+    {
+        throw "Error";
+    }
+}
+
 void FuncRParams(int params_count)
 {
     do
@@ -692,31 +790,128 @@ void FuncRParams(int params_count)
     }
 }
 
-void UnaryOp()
+void MulExp()
 {
-    if (sym.type == 18 || sym.type == 19)
+    UnaryExp();
+    while (true)
     {
+        if (sym.type != 20 && sym.type != 21 && sym.type != 22)
+        {
+            break;
+        }
         exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
-        exp_stack_tmp->type = 4;
+        exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
-    }
-    else
-    {
-        throw "Error";
+        nextsym();
+        UnaryExp();
+
+        Operation();
     }
 }
 
-// 处理标志符
-void Ident()
+void AddExp()
 {
-    if (sym.type == 33)
+    MulExp();
+    while (true)
     {
-        fprintf(fp_ir, "@%s", sym.ident);
+        // 使用 MulExp() 中最后读入的 sym 即可
+        if (sym.type != 18 && sym.type != 19 && !(is_in_cond && sym.type == 23))
+        {
+            break;
+        }
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp->type = 2;
+        exp_stack_tmp->value = sym.type;
+        exp_stack.push(*exp_stack_tmp);
+        nextsym();
+        MulExp();
+
+        Operation();
     }
-    else
+}
+
+void RelExp()
+{
+    AddExp();
+    while (true)
     {
-        throw "Error";
+        if (sym.type < 24 || sym.type > 27)
+        {
+            break;
+        }
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp->type = 2;
+        exp_stack_tmp->value = sym.type;
+        exp_stack.push(*exp_stack_tmp);
+        nextsym();
+        AddExp();
+
+        CmpOperation();
+    }
+}
+
+void EqExp()
+{
+    RelExp();
+    toInt();
+    while (true)
+    {
+        if (sym.type != 28 && sym.type != 29)
+        {
+            break;
+        }
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp->type = 2;
+        exp_stack_tmp->value = sym.type;
+        exp_stack.push(*exp_stack_tmp);
+        nextsym();
+        RelExp();
+        toInt();
+
+        CmpOperation();
+    }
+}
+
+void LAndExp()
+{
+    EqExp();
+    toBool();
+    while (true)
+    {
+        if (sym.type != 30)
+        {
+            break;
+        }
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp->type = 2;
+        exp_stack_tmp->value = sym.type;
+        exp_stack.push(*exp_stack_tmp);
+        nextsym();
+        EqExp();
+        toBool();
+
+        BitOperation();
+    }
+}
+
+void LOrExp()
+{
+    LAndExp();
+    while (true)
+    {
+        if (sym.type != 31)
+        {
+            break;
+        }
+        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp->type = 2;
+        exp_stack_tmp->value = sym.type;
+        exp_stack.push(*exp_stack_tmp);
+        nextsym();
+        LAndExp();
+
+        BitOperation();
     }
 }
 
@@ -792,12 +987,153 @@ void Operation()
     }
 }
 
+void NotOperation(struct ExpItem num)
+{
+    // 进行非运算
+    PrintSpace();
+    if (num.type == 1)
+    {
+        fprintf(fp_ir, "%%%d = icmp eq i32 %d, 0\n", ++temp_register, num.value);
+    }
+    else
+    {
+        fprintf(fp_ir, "%%%d = icmp eq i32 %%%d, 0\n", ++temp_register, num.value);
+    }
+
+    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp->type = 3;
+    exp_stack_tmp->value = ++temp_register;
+    exp_stack.push(*exp_stack_tmp);
+
+    // 将非运算的结果转化为 i32
+    PrintSpace();
+    fprintf(fp_ir, "%%%d = zext i1 %%%d to i32", temp_register, temp_register - 1);
+}
+
+// 处理比较运算
+void CmpOperation()
+{
+    struct ExpItem num1, num2, op;
+
+    num2 = exp_stack.top();
+    if (num2.type != 1 && num2.type != 3)
+    {
+        throw "Error";
+    }
+    exp_stack.pop();
+
+    op = exp_stack.top();
+    if (op.type != 2)
+    {
+        throw "Error";
+    }
+    exp_stack.pop();
+
+    num1 = exp_stack.top();
+    if (num1.type != 1 && num1.type != 3)
+    {
+        throw "Error";
+    }
+    exp_stack.pop();
+
+    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp->type = 5;
+    exp_stack_tmp->value = ++temp_register;
+    exp_stack.push(*exp_stack_tmp);
+
+    PrintSpace();
+    fprintf(fp_ir, "%%%d = icmp ", exp_stack_tmp->value);
+    switch (op.value)
+    {
+    case 24:
+        fprintf(fp_ir, "slt i32 ");
+        break;
+    case 25:
+        fprintf(fp_ir, "sgt i32 ");
+        break;
+    case 26:
+        fprintf(fp_ir, "sle i32 ");
+        break;
+    case 27:
+        fprintf(fp_ir, "sge i32 ");
+        break;
+    case 28:
+        fprintf(fp_ir, "eq i32 ");
+        break;
+    case 29:
+        fprintf(fp_ir, "ne i32 ");
+        break;
+    default:
+        throw "Error";
+        break;
+    }
+    if (num1.type == 1)
+    {
+        fprintf(fp_ir, "%d, ", num1.value);
+    }
+    else
+    {
+        fprintf(fp_ir, "%%%d, ", num1.value);
+    }
+    if (num2.type == 1)
+    {
+        fprintf(fp_ir, "%d\n", num2.value);
+    }
+    else
+    {
+        fprintf(fp_ir, "%%%d\n", num2.value);
+    }
+}
+
+// 处理与或运算
+void BitOperation()
+{
+    struct ExpItem num1, num2, op;
+
+    num2 = exp_stack.top();
+    if (num2.type != 5)
+    {
+        throw "Error";
+    }
+    exp_stack.pop();
+
+    op = exp_stack.top();
+    if (op.type != 2)
+    {
+        throw "Error";
+    }
+    exp_stack.pop();
+
+    num1 = exp_stack.top();
+    if (num1.type != 5)
+    {
+        throw "Error";
+    }
+    exp_stack.pop();
+
+    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp->type = 5;
+    exp_stack_tmp->value = ++temp_register;
+    exp_stack.push(*exp_stack_tmp);
+
+    PrintSpace();
+    if (op.value == 30)
+    {
+        fprintf(fp_ir, "%%%d = and i1 %%%d, %%%d\n", temp_register, num1.value, num2.value);
+    }
+    else if (op.value == 31)
+    {
+        fprintf(fp_ir, "%%%d = or i1 %%%d, %%%d\n", temp_register, num1.value, num2.value);
+    }
+    else
+    {
+        throw "Error";
+    }
+}
+
 void PrintSpace()
 {
-    for (int i = 0; i < nest_number; i++)
-    {
-        fprintf(fp_ir, "    ");
-    }
+    fprintf(fp_ir, "    ");
 }
 
 void FuncMapInit()
@@ -924,4 +1260,51 @@ void FuncCall()
     }
 
     fprintf(fp_ir, ")\n");
+}
+
+void toBool()
+{
+    struct ExpItem num;
+
+    num = exp_stack.top();
+    if (num.type != 1 && num.type != 3)
+    {
+        return;
+    }
+    exp_stack.pop();
+
+    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp->type = 5;
+    exp_stack_tmp->value = ++temp_register;
+    exp_stack.push(*exp_stack_tmp);
+
+    PrintSpace();
+    if (num.type == 1)
+    {
+        fprintf(fp_ir, "%%%d = icmp ne i32 %d, 0\n", temp_register, num.value);
+    }
+    else
+    {
+        fprintf(fp_ir, "%%%d = icmp ne i32 %%%d, 0\n", temp_register, num.value);
+    }
+}
+
+void toInt()
+{
+    struct ExpItem num;
+
+    num = exp_stack.top();
+    if (num.type != 5)
+    {
+        return;
+    }
+    exp_stack.pop();
+
+    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp->type = 3;
+    exp_stack_tmp->value = ++temp_register;
+    exp_stack.push(*exp_stack_tmp);
+
+    PrintSpace();
+    fprintf(fp_ir, "%%%d = zext i1 %%%d to i32\n", temp_register, num.value);
 }
