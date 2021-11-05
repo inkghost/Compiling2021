@@ -191,7 +191,7 @@ void ConstDef()
     var_map[sym.ident] = *var_item_tmp;
 
     PrintSpace();
-    fprintf(fp_ir, "%%%d = alloca i32\n", temp_register);
+    fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
 
     nextsym();
     if (sym.type != 17)
@@ -206,11 +206,11 @@ void ConstDef()
     PrintSpace();
     if (exp_stack_tmp->type == 1)
     {
-        fprintf(fp_ir, "store i32 %d, i32* %%%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
     }
     else if (exp_stack_tmp->type == 3)
     {
-        fprintf(fp_ir, "store i32 %%%d, i32* %%%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
     }
     else
     {
@@ -273,7 +273,7 @@ void VarDef()
     var_map[sym.ident] = *var_item_tmp;
 
     PrintSpace();
-    fprintf(fp_ir, "%%%d = alloca i32\n", temp_register);
+    fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
 
     nextsym();
     if (sym.type != 17)
@@ -288,11 +288,11 @@ void VarDef()
     PrintSpace();
     if (exp_stack_tmp->type == 1)
     {
-        fprintf(fp_ir, "store i32 %d, i32* %%%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
     }
     else if (exp_stack_tmp->type == 3)
     {
-        fprintf(fp_ir, "store i32 %%%d, i32* %%%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
     }
     else
     {
@@ -346,7 +346,7 @@ void FuncDef()
     nextsym();
     Block();
 
-    fprintf(fp_ir, "\n}");
+    fprintf(fp_ir, "}");
 }
 
 void FuncType()
@@ -405,11 +405,11 @@ void Stmt()
         PrintSpace();
         if (exp_stack_tmp->type == 1)
         {
-            fprintf(fp_ir, "ret i32 %d", exp_stack_tmp->value);
+            fprintf(fp_ir, "ret i32 %d\n", exp_stack_tmp->value);
         }
         else if (exp_stack_tmp->type == 3)
         {
-            fprintf(fp_ir, "ret i32 %%%d", exp_stack_tmp->value);
+            fprintf(fp_ir, "ret i32 %%x%d\n", exp_stack_tmp->value);
         }
         else
         {
@@ -455,7 +455,7 @@ void Stmt()
         int out_block = ++basic_block;
 
         PrintSpace();
-        fprintf(fp_ir, "br i1 %%%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, if_block, out_block);
+        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, if_block, out_block);
 
         fprintf(fp_ir, "basic_block_%d:\n", if_block);
 
@@ -519,11 +519,11 @@ void Stmt()
             PrintSpace();
             if (exp_stack_tmp->type == 1)
             {
-                fprintf(fp_ir, "store i32 %d, i32* %%%d\n", exp_stack_tmp->value, lval_register);
+                fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, lval_register);
             }
             else if (exp_stack_tmp->type == 3)
             {
-                fprintf(fp_ir, "store i32 %%%d, i32* %%%d\n", exp_stack_tmp->value, lval_register);
+                fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, lval_register);
             }
             else
             {
@@ -645,7 +645,7 @@ void PrimaryExp()
         exp_stack.push(*exp_stack_tmp);
 
         PrintSpace();
-        fprintf(fp_ir, "%%%d = load i32, i32* %%%d", exp_stack_tmp->value, lval_register);
+        fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d", exp_stack_tmp->value, lval_register);
 
         nextsym();
     }
@@ -694,11 +694,11 @@ void UnaryExp()
             PrintSpace();
             if (num.type == 1)
             {
-                fprintf(fp_ir, "%%%d = sub i32 0, %d\n", ++temp_register, num.value);
+                fprintf(fp_ir, "%%x%d = sub i32 0, %d\n", ++temp_register, num.value);
             }
             else
             {
-                fprintf(fp_ir, "%%%d = sub i32 0, %%%d\n", ++temp_register, num.value);
+                fprintf(fp_ir, "%%x%d = sub i32 0, %%x%d\n", ++temp_register, num.value);
             }
             num.type = 3;
             num.value = temp_register;
@@ -751,7 +751,7 @@ void UnaryExp()
             exp_stack.push(*exp_stack_tmp);
 
             PrintSpace();
-            fprintf(fp_ir, "%%%d = load i32, i32* %%%d\n", exp_stack_tmp->value, lval_register);
+            fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_register);
 
             swap(tmp_sym, sym);
         }
@@ -947,7 +947,7 @@ void Operation()
     exp_stack.push(*exp_stack_tmp);
 
     PrintSpace();
-    fprintf(fp_ir, "%%%d = ", exp_stack_tmp->value);
+    fprintf(fp_ir, "%%x%d = ", exp_stack_tmp->value);
     switch (op.value)
     {
     case 18:
@@ -975,7 +975,7 @@ void Operation()
     }
     else
     {
-        fprintf(fp_ir, "%%%d, ", num1.value);
+        fprintf(fp_ir, "%%x%d, ", num1.value);
     }
     if (num2.type == 1)
     {
@@ -983,7 +983,7 @@ void Operation()
     }
     else
     {
-        fprintf(fp_ir, "%%%d\n", num2.value);
+        fprintf(fp_ir, "%%x%d\n", num2.value);
     }
 }
 
@@ -993,11 +993,11 @@ void NotOperation(struct ExpItem num)
     PrintSpace();
     if (num.type == 1)
     {
-        fprintf(fp_ir, "%%%d = icmp eq i32 %d, 0\n", ++temp_register, num.value);
+        fprintf(fp_ir, "%%x%d = icmp eq i32 %d, 0\n", ++temp_register, num.value);
     }
     else
     {
-        fprintf(fp_ir, "%%%d = icmp eq i32 %%%d, 0\n", ++temp_register, num.value);
+        fprintf(fp_ir, "%%x%d = icmp eq i32 %%x%d, 0\n", ++temp_register, num.value);
     }
 
     exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
@@ -1007,7 +1007,7 @@ void NotOperation(struct ExpItem num)
 
     // 将非运算的结果转化为 i32
     PrintSpace();
-    fprintf(fp_ir, "%%%d = zext i1 %%%d to i32", temp_register, temp_register - 1);
+    fprintf(fp_ir, "%%x%d = zext i1 %%x%d to i32", temp_register, temp_register - 1);
 }
 
 // 处理比较运算
@@ -1042,7 +1042,7 @@ void CmpOperation()
     exp_stack.push(*exp_stack_tmp);
 
     PrintSpace();
-    fprintf(fp_ir, "%%%d = icmp ", exp_stack_tmp->value);
+    fprintf(fp_ir, "%%x%d = icmp ", exp_stack_tmp->value);
     switch (op.value)
     {
     case 24:
@@ -1073,7 +1073,7 @@ void CmpOperation()
     }
     else
     {
-        fprintf(fp_ir, "%%%d, ", num1.value);
+        fprintf(fp_ir, "%%x%d, ", num1.value);
     }
     if (num2.type == 1)
     {
@@ -1081,7 +1081,7 @@ void CmpOperation()
     }
     else
     {
-        fprintf(fp_ir, "%%%d\n", num2.value);
+        fprintf(fp_ir, "%%x%d\n", num2.value);
     }
 }
 
@@ -1119,11 +1119,11 @@ void BitOperation()
     PrintSpace();
     if (op.value == 30)
     {
-        fprintf(fp_ir, "%%%d = and i1 %%%d, %%%d\n", temp_register, num1.value, num2.value);
+        fprintf(fp_ir, "%%x%d = and i1 %%x%d, %%x%d\n", temp_register, num1.value, num2.value);
     }
     else if (op.value == 31)
     {
-        fprintf(fp_ir, "%%%d = or i1 %%%d, %%%d\n", temp_register, num1.value, num2.value);
+        fprintf(fp_ir, "%%x%d = or i1 %%x%d, %%x%d\n", temp_register, num1.value, num2.value);
     }
     else
     {
@@ -1213,7 +1213,7 @@ void FuncCall()
         exp_stack_tmp->type = 3;
         exp_stack_tmp->value = ++temp_register;
         PrintSpace();
-        fprintf(fp_ir, "%%%d = call i32 @%s", exp_stack_tmp->value, (*func_it).first.c_str());
+        fprintf(fp_ir, "%%x%d = call i32 @%s", exp_stack_tmp->value, (*func_it).first.c_str());
     }
 
     fprintf(fp_ir, "(");
@@ -1244,7 +1244,7 @@ void FuncCall()
         }
         else if (exp_stack.top().type == 3)
         {
-            fprintf(fp_ir, "%%%d", exp_stack.top().value);
+            fprintf(fp_ir, "%%x%d", exp_stack.top().value);
         }
         else
         {
@@ -1281,11 +1281,11 @@ void toBool()
     PrintSpace();
     if (num.type == 1)
     {
-        fprintf(fp_ir, "%%%d = icmp ne i32 %d, 0\n", temp_register, num.value);
+        fprintf(fp_ir, "%%x%d = icmp ne i32 %d, 0\n", temp_register, num.value);
     }
     else
     {
-        fprintf(fp_ir, "%%%d = icmp ne i32 %%%d, 0\n", temp_register, num.value);
+        fprintf(fp_ir, "%%x%d = icmp ne i32 %%x%d, 0\n", temp_register, num.value);
     }
 }
 
@@ -1306,5 +1306,5 @@ void toInt()
     exp_stack.push(*exp_stack_tmp);
 
     PrintSpace();
-    fprintf(fp_ir, "%%%d = zext i1 %%%d to i32\n", temp_register, num.value);
+    fprintf(fp_ir, "%%x%d = zext i1 %%x%d to i32\n", temp_register, num.value);
 }
