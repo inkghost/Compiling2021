@@ -253,8 +253,11 @@ void ConstDef()
 
     var_map[sym.ident] = *var_item_tmp;
 
-    PrintSpace();
-    fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
+    if (!is_in_global)
+    {
+        PrintSpace();
+        fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
+    }
 
     nextsym();
     if (sym.type != 17)
@@ -266,9 +269,20 @@ void ConstDef()
     ConstInitVal();
 
     exp_stack_tmp = &exp_stack.top();
-    PrintSpace();
-    if (exp_stack_tmp->type == 1)
+    if (is_in_global)
     {
+        if (exp_stack_tmp->type != 1)
+        {
+            throw "Error";
+        }
+        fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
+        var_item_tmp->have_real_value = true;
+        var_item_tmp->real_value = exp_stack_tmp->value;
+        var_map[ident] = *var_item_tmp;
+    }
+    else if (exp_stack_tmp->type == 1)
+    {
+        PrintSpace();
         fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
         var_item_tmp->have_real_value = true;
         var_item_tmp->real_value = exp_stack_tmp->value;
@@ -278,6 +292,7 @@ void ConstDef()
     {
         if (exp_stack_tmp->have_real_value)
         {
+            PrintSpace();
             fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
             var_item_tmp->have_real_value = true;
             var_item_tmp->real_value = exp_stack_tmp->real_value;
@@ -285,6 +300,7 @@ void ConstDef()
         }
         else
         {
+            PrintSpace();
             fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
         }
     }
@@ -352,12 +368,22 @@ void VarDef()
 
     var_map[sym.ident] = *var_item_tmp;
 
-    PrintSpace();
-    fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
+    if (!is_in_global)
+    {
+        PrintSpace();
+        fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
+    }
 
     nextsym();
     if (sym.type != 17)
     {
+        if (is_in_global)
+        {
+            fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
+            var_item_tmp->have_real_value = true;
+            var_item_tmp->real_value = 0;
+            var_map[ident] = *var_item_tmp;
+        }
         return;
     }
 
@@ -365,9 +391,20 @@ void VarDef()
     InitVal();
 
     exp_stack_tmp = &exp_stack.top();
-    PrintSpace();
-    if (exp_stack_tmp->type == 1)
+    if (is_in_global)
     {
+        if (exp_stack_tmp->type != 1)
+        {
+            throw "Error";
+        }
+        fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
+        var_item_tmp->have_real_value = true;
+        var_item_tmp->real_value = exp_stack_tmp->value;
+        var_map[ident] = *var_item_tmp;
+    }
+    else if (exp_stack_tmp->type == 1)
+    {
+        PrintSpace();
         fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
         var_item_tmp->have_real_value = true;
         var_item_tmp->real_value = exp_stack_tmp->value;
@@ -377,6 +414,7 @@ void VarDef()
     {
         if (exp_stack_tmp->have_real_value)
         {
+            PrintSpace();
             fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
             var_item_tmp->have_real_value = true;
             var_item_tmp->real_value = exp_stack_tmp->real_value;
@@ -384,6 +422,7 @@ void VarDef()
         }
         else
         {
+            PrintSpace();
             fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
         }
     }
@@ -397,7 +436,12 @@ void VarDef()
 
 void InitVal()
 {
+    have_var_in_cal = false;
     Exp();
+    if (is_in_global && have_var_in_cal)
+    {
+        throw "Error";
+    }
 }
 
 void FuncDef()
