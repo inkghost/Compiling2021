@@ -32,6 +32,8 @@ typedef struct
     bool have_real_value;
     // 实值
     int real_value;
+    // 嵌套层数
+    int nest_layer;
 } VarItem;
 
 typedef struct
@@ -70,6 +72,19 @@ LValReturn lval_return;
 stack<ExpItem> exp_stack;
 // 变量 map 队列
 list<map<string, VarItem>> var_map_list;
+
+// 记录运算过程中是否出现变量
+bool have_var_in_cal;
+// 记录该变量是否是常量
+bool this_is_const;
+// 记录是否处于 Cond 判断中
+bool is_in_cond;
+// 记录基础块个数
+int basic_block;
+// 记录是否在全局环境中
+bool is_in_global;
+// 嵌套层数；
+int nest_layer;
 
 void CompUnit();
 void Decl();
@@ -118,16 +133,6 @@ void FuncCall();
 void toBool();
 // 将栈顶元素转化为 i32
 void toInt();
-// 记录运算过程中是否出现变量
-bool have_var_in_cal;
-// 记录该变量是否是常量
-bool this_is_const;
-// 记录是否处于 Cond 判断中
-bool is_in_cond;
-// 记录基础块个数
-int basic_block;
-// 记录是否在全局环境中
-bool is_in_global;
 
 void CompUnit()
 {
@@ -244,6 +249,7 @@ void ConstDef()
     var_item_tmp->register_num = ++temp_register;
     var_item_tmp->have_real_value = false;
     var_item_tmp->is_global = is_in_global;
+    var_item_tmp->nest_layer = nest_layer;
 
     var_map[sym.ident] = *var_item_tmp;
 
@@ -342,6 +348,7 @@ void VarDef()
     var_item_tmp->register_num = ++temp_register;
     var_item_tmp->have_real_value = false;
     var_item_tmp->is_global = is_in_global;
+    var_item_tmp->nest_layer = nest_layer;
 
     var_map[sym.ident] = *var_item_tmp;
 
@@ -449,6 +456,7 @@ void FuncType()
 
 void Block()
 {
+    nest_layer++;
     var_map_list.push_back(var_map);
     var_map.clear();
 
@@ -466,6 +474,7 @@ void Block()
 
     var_map = var_map_list.back();
     var_map_list.pop_back();
+    nest_layer--;
 }
 
 void BlockItem()
@@ -543,16 +552,20 @@ void Stmt()
         PrintSpace();
         fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, if_block, out_block);
 
+        // if bolck
         fprintf(fp_ir, "basic_block_%d:\n", if_block);
 
+        nest_layer++;
         nextsym();
         Stmt();
+        nest_layer--;
 
         Lexical tmp_sym = sym;
         nextsym();
 
         if (sym.type == 4)
         {
+            // else block
             int else_block = out_block;
             out_block = ++basic_block;
 
@@ -560,8 +573,10 @@ void Stmt()
             fprintf(fp_ir, "br label %%basic_block_%d\n", out_block);
             fprintf(fp_ir, "basic_block_%d:\n", else_block);
 
+            nest_layer++;
             nextsym();
             Stmt();
+            nest_layer--;
 
             PrintSpace();
             fprintf(fp_ir, "br label %%basic_block_%d\n", out_block);
@@ -574,6 +589,7 @@ void Stmt()
             fprintf(fp_ir, "br label %%basic_block_%d\n", out_block);
         }
 
+        // out block
         fprintf(fp_ir, "basic_block_%d:\n", out_block);
     }
     else if (sym.type == 33)
@@ -615,7 +631,7 @@ void Stmt()
                 {
                     fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
                 }
-                tmp_lval_return.var_item->have_real_value = true;
+                tmp_lval_return.var_item->have_real_value = tmp_lval_return.var_item->nest_layer == nest_layer;
                 tmp_lval_return.var_item->real_value = exp_stack_tmp->value;
             }
             else if (exp_stack_tmp->type == 3)
@@ -628,7 +644,7 @@ void Stmt()
                 {
                     fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
                 }
-                tmp_lval_return.var_item->have_real_value = exp_stack_tmp->have_real_value;
+                tmp_lval_return.var_item->have_real_value = exp_stack_tmp->have_real_value && tmp_lval_return.var_item->nest_layer == nest_layer;
                 tmp_lval_return.var_item->real_value = exp_stack_tmp->real_value;
             }
             else
