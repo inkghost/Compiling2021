@@ -14,14 +14,24 @@ typedef struct
     // 运算符：18 +,19 -,20 *,21 /,22 %, 23 !, 24 <, 25 >, 26 <=, 27 >=, 28 ==, 29 !=, 30 &&, 31 ||
     // 临时寄存器的次序
     int value;
+    // 是否有实值
+    bool have_real_value;
+    // 实值
+    int real_value;
 } ExpItem;
 
 typedef struct
 {
+    // 全局变量
+    bool is_global;
     // 是否是常量
     bool is_const;
     // 临时寄存器的值
     int register_num;
+    // 是否有实值
+    bool have_real_value;
+    // 实值
+    int real_value;
 } VarItem;
 
 typedef struct
@@ -34,10 +44,7 @@ typedef struct
 
 typedef struct
 {
-    // 全局变量
-    bool is_global;
-    // 寄存器值
-    bool lval_register;
+    VarItem *var_item;
     // 标识符
     char ident[4096];
 } LValReturn;
@@ -143,7 +150,7 @@ void CompUnit()
         backsysm(sym_list[1]);
         backsysm(sym_list[0]);
 
-        if (sym.type != 34)
+        if (sym.type == 34)
         {
             break;
         }
@@ -223,6 +230,7 @@ void ConstDef()
         throw "Error";
     }
     VarItem *var_item_tmp;
+    string ident = sym.ident;
 
     // 检查变量是否重复声明
     var_it = var_map.find((string)sym.ident);
@@ -234,6 +242,8 @@ void ConstDef()
     var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
     var_item_tmp->is_const = true;
     var_item_tmp->register_num = ++temp_register;
+    var_item_tmp->have_real_value = false;
+    var_item_tmp->is_global = is_in_global;
 
     var_map[sym.ident] = *var_item_tmp;
 
@@ -254,10 +264,23 @@ void ConstDef()
     if (exp_stack_tmp->type == 1)
     {
         fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        var_item_tmp->have_real_value = true;
+        var_item_tmp->real_value = exp_stack_tmp->value;
+        var_map[ident] = *var_item_tmp;
     }
     else if (exp_stack_tmp->type == 3)
     {
-        fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        if (exp_stack_tmp->have_real_value)
+        {
+            fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
+            var_item_tmp->have_real_value = true;
+            var_item_tmp->real_value = exp_stack_tmp->real_value;
+            var_map[ident] = *var_item_tmp;
+        }
+        else
+        {
+            fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        }
     }
     else
     {
@@ -305,6 +328,7 @@ void VarDef()
         throw "Error";
     }
     VarItem *var_item_tmp;
+    string ident = sym.ident;
 
     // 检查变量是否重复声明
     var_it = var_map.find((string)sym.ident);
@@ -316,6 +340,8 @@ void VarDef()
     var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
     var_item_tmp->is_const = false;
     var_item_tmp->register_num = ++temp_register;
+    var_item_tmp->have_real_value = false;
+    var_item_tmp->is_global = is_in_global;
 
     var_map[sym.ident] = *var_item_tmp;
 
@@ -336,10 +362,23 @@ void VarDef()
     if (exp_stack_tmp->type == 1)
     {
         fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        var_item_tmp->have_real_value = true;
+        var_item_tmp->real_value = exp_stack_tmp->value;
+        var_map[ident] = *var_item_tmp;
     }
     else if (exp_stack_tmp->type == 3)
     {
-        fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        if (exp_stack_tmp->have_real_value)
+        {
+            fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
+            var_item_tmp->have_real_value = true;
+            var_item_tmp->real_value = exp_stack_tmp->real_value;
+            var_map[ident] = *var_item_tmp;
+        }
+        else
+        {
+            fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+        }
     }
     else
     {
@@ -568,25 +607,29 @@ void Stmt()
             PrintSpace();
             if (exp_stack_tmp->type == 1)
             {
-                if (tmp_lval_return.is_global)
+                if (tmp_lval_return.var_item->is_global)
                 {
                     fprintf(fp_ir, "store i32 %d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
                 }
                 else
                 {
-                    fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.lval_register);
+                    fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
                 }
+                tmp_lval_return.var_item->have_real_value = true;
+                tmp_lval_return.var_item->real_value = exp_stack_tmp->value;
             }
             else if (exp_stack_tmp->type == 3)
             {
-                if (tmp_lval_return.is_global)
+                if (tmp_lval_return.var_item->is_global)
                 {
                     fprintf(fp_ir, "store i32 %%x%d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
                 }
                 else
                 {
-                    fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.lval_register);
+                    fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
                 }
+                tmp_lval_return.var_item->have_real_value = exp_stack_tmp->have_real_value;
+                tmp_lval_return.var_item->real_value = exp_stack_tmp->real_value;
             }
             else
             {
@@ -627,8 +670,6 @@ void Cond()
 
 void LVal()
 {
-    lval_return.is_global = false;
-    lval_return.lval_register = 0;
     strcpy(lval_return.ident, sym.ident);
 
     if (sym.type != 33)
@@ -665,7 +706,6 @@ void LVal()
         {
             throw "Error";
         }
-        lval_return.is_global = true;
     }
 
     if ((*var_it).second.is_const)
@@ -677,7 +717,7 @@ void LVal()
         have_var_in_cal = true;
     }
 
-    lval_return.lval_register = (*var_it).second.register_num;
+    lval_return.var_item = &(*var_it).second;
 }
 
 void PrimaryExp()
@@ -700,6 +740,8 @@ void PrimaryExp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 1;
         exp_stack_tmp->value = sym.value;
+        exp_stack_tmp->have_real_value = true;
+        exp_stack_tmp->real_value = sym.value;
         exp_stack.push(*exp_stack_tmp);
         nextsym();
     }
@@ -708,18 +750,31 @@ void PrimaryExp()
         LVal();
 
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-        exp_stack_tmp->type = 3;
-        exp_stack_tmp->value = ++temp_register;
-        exp_stack.push(*exp_stack_tmp);
-
-        PrintSpace();
-        if (lval_return.is_global)
+        if (lval_return.var_item->have_real_value)
         {
-            fprintf(fp_ir, "%%x%d = load i32, i32* @%s\n", exp_stack_tmp->value, lval_return.ident);
+            exp_stack_tmp->type = 1;
+            exp_stack_tmp->value = lval_return.var_item->real_value;
+            exp_stack_tmp->have_real_value = true;
+            exp_stack_tmp->real_value = lval_return.var_item->real_value;
+            exp_stack.push(*exp_stack_tmp);
         }
         else
         {
-            fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.lval_register);
+            exp_stack_tmp->type = 3;
+            exp_stack_tmp->value = ++temp_register;
+            exp_stack_tmp->have_real_value = false;
+            exp_stack_tmp->real_value = lval_return.var_item->real_value;
+            exp_stack.push(*exp_stack_tmp);
+
+            PrintSpace();
+            if (lval_return.var_item->is_global)
+            {
+                fprintf(fp_ir, "%%x%d = load i32, i32* @%s\n", exp_stack_tmp->value, lval_return.ident);
+            }
+            else
+            {
+                fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
+            }
         }
 
         nextsym();
@@ -766,17 +821,17 @@ void UnaryExp()
         }
         else if (op.value == 19)
         {
-            PrintSpace();
             if (num.type == 1)
             {
-                fprintf(fp_ir, "%%x%d = sub i32 0, %d\n", ++temp_register, num.value);
+                num.value = num.real_value = -num.value;
             }
             else
             {
+                PrintSpace();
                 fprintf(fp_ir, "%%x%d = sub i32 0, %%x%d\n", ++temp_register, num.value);
+                num.type = 3;
+                num.value = temp_register;
             }
-            num.type = 3;
-            num.value = temp_register;
         }
         else if (is_in_cond && op.value == 23)
         {
@@ -790,8 +845,15 @@ void UnaryExp()
             }
             if (doNotOperation)
             {
-                NotOperation(num);
-                return;
+                if (num.have_real_value)
+                {
+                    num.value == 0 ? num.value = num.real_value = 1 : num.value = num.real_value = 0;
+                }
+                else
+                {
+                    NotOperation(num);
+                    return;
+                }
             }
         }
 
@@ -821,18 +883,31 @@ void UnaryExp()
             LVal();
 
             exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-            exp_stack_tmp->type = 3;
-            exp_stack_tmp->value = ++temp_register;
-            exp_stack.push(*exp_stack_tmp);
-
-            PrintSpace();
-            if (lval_return.is_global)
+            if (lval_return.var_item->have_real_value)
             {
-                fprintf(fp_ir, "%%x%d = load i32, i32* @%s\n", exp_stack_tmp->value, lval_return.ident);
+                exp_stack_tmp->type = 1;
+                exp_stack_tmp->value = lval_return.var_item->real_value;
+                exp_stack_tmp->have_real_value = true;
+                exp_stack_tmp->real_value = lval_return.var_item->real_value;
+                exp_stack.push(*exp_stack_tmp);
             }
             else
             {
-                fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.lval_register);
+                exp_stack_tmp->type = 3;
+                exp_stack_tmp->value = ++temp_register;
+                exp_stack_tmp->have_real_value = false;
+                exp_stack_tmp->real_value = lval_return.var_item->real_value;
+                exp_stack.push(*exp_stack_tmp);
+
+                PrintSpace();
+                if (lval_return.var_item->is_global)
+                {
+                    fprintf(fp_ir, "%%x%d = load i32, i32* @%s\n", exp_stack_tmp->value, lval_return.ident);
+                }
+                else
+                {
+                    fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
+                }
             }
 
             swap(tmp_sym, sym);
@@ -851,6 +926,7 @@ void UnaryOp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 4;
         exp_stack_tmp->value = sym.type;
+        exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
     }
     else
@@ -884,6 +960,7 @@ void MulExp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
+        exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
         nextsym();
         UnaryExp();
@@ -905,6 +982,7 @@ void AddExp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
+        exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
         nextsym();
         MulExp();
@@ -925,6 +1003,7 @@ void RelExp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
+        exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
         nextsym();
         AddExp();
@@ -946,6 +1025,7 @@ void EqExp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
+        exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
         nextsym();
         RelExp();
@@ -968,6 +1048,7 @@ void LAndExp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
+        exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
         nextsym();
         EqExp();
@@ -989,6 +1070,7 @@ void LOrExp()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
+        exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
         nextsym();
         LAndExp();
@@ -1024,48 +1106,82 @@ void Operation()
     exp_stack.pop();
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-    exp_stack_tmp->type = 3;
-    exp_stack_tmp->value = ++temp_register;
-    exp_stack.push(*exp_stack_tmp);
 
-    PrintSpace();
-    fprintf(fp_ir, "%%x%d = ", exp_stack_tmp->value);
-    switch (op.value)
+    if (num1.have_real_value && num2.have_real_value)
     {
-    case 18:
-        fprintf(fp_ir, "add i32 ");
-        break;
-    case 19:
-        fprintf(fp_ir, "sub i32 ");
-        break;
-    case 20:
-        fprintf(fp_ir, "mul i32 ");
-        break;
-    case 21:
-        fprintf(fp_ir, "sdiv i32 ");
-        break;
-    case 22:
-        fprintf(fp_ir, "srem i32 ");
-        break;
-    default:
-        throw "Error";
-        break;
-    }
-    if (num1.type == 1)
-    {
-        fprintf(fp_ir, "%d, ", num1.value);
-    }
-    else
-    {
-        fprintf(fp_ir, "%%x%d, ", num1.value);
-    }
-    if (num2.type == 1)
-    {
-        fprintf(fp_ir, "%d\n", num2.value);
+        exp_stack_tmp->type = 1;
+        exp_stack_tmp->have_real_value = true;
+
+        switch (op.value)
+        {
+        case 18:
+            exp_stack_tmp->value = exp_stack_tmp->real_value = num1.real_value + num2.real_value;
+            break;
+        case 19:
+            exp_stack_tmp->value = exp_stack_tmp->real_value = num1.real_value - num2.real_value;
+            break;
+        case 20:
+            exp_stack_tmp->value = exp_stack_tmp->real_value = num1.real_value * num2.real_value;
+            break;
+        case 21:
+            exp_stack_tmp->value = exp_stack_tmp->real_value = num1.real_value / num2.real_value;
+            break;
+        case 22:
+            exp_stack_tmp->value = exp_stack_tmp->real_value = num1.real_value % num2.real_value;
+            break;
+        default:
+            throw "Error";
+            break;
+        }
+
+        exp_stack.push(*exp_stack_tmp);
     }
     else
     {
-        fprintf(fp_ir, "%%x%d\n", num2.value);
+        exp_stack_tmp->type = 3;
+        exp_stack_tmp->value = ++temp_register;
+        exp_stack_tmp->have_real_value = false;
+        exp_stack.push(*exp_stack_tmp);
+
+        PrintSpace();
+        fprintf(fp_ir, "%%x%d = ", exp_stack_tmp->value);
+        switch (op.value)
+        {
+        case 18:
+            fprintf(fp_ir, "add i32 ");
+            break;
+        case 19:
+            fprintf(fp_ir, "sub i32 ");
+            break;
+        case 20:
+            fprintf(fp_ir, "mul i32 ");
+            break;
+        case 21:
+            fprintf(fp_ir, "sdiv i32 ");
+            break;
+        case 22:
+            fprintf(fp_ir, "srem i32 ");
+            break;
+        default:
+            throw "Error";
+            break;
+        }
+        if (num1.type == 1)
+        {
+            fprintf(fp_ir, "%d, ", num1.value);
+        }
+        else
+        {
+            fprintf(fp_ir, "%%x%d, ", num1.value);
+        }
+        if (num2.type == 1)
+        {
+            fprintf(fp_ir, "%d\n", num2.value);
+        }
+        else
+        {
+            fprintf(fp_ir, "%%x%d\n", num2.value);
+        }
     }
 }
 
@@ -1073,18 +1189,12 @@ void NotOperation(ExpItem num)
 {
     // 进行非运算
     PrintSpace();
-    if (num.type == 1)
-    {
-        fprintf(fp_ir, "%%x%d = icmp eq i32 %d, 0\n", ++temp_register, num.value);
-    }
-    else
-    {
-        fprintf(fp_ir, "%%x%d = icmp eq i32 %%x%d, 0\n", ++temp_register, num.value);
-    }
+    fprintf(fp_ir, "%%x%d = icmp eq i32 %%x%d, 0\n", ++temp_register, num.value);
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 3;
     exp_stack_tmp->value = ++temp_register;
+    exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
 
     // 将非运算的结果转化为 i32
@@ -1121,6 +1231,7 @@ void CmpOperation()
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
+    exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
 
     PrintSpace();
@@ -1196,6 +1307,7 @@ void BitOperation()
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
+    exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
 
     PrintSpace();
@@ -1294,6 +1406,7 @@ void FuncCall()
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 3;
         exp_stack_tmp->value = ++temp_register;
+        exp_stack_tmp->have_real_value = false;
         PrintSpace();
         fprintf(fp_ir, "%%x%d = call i32 @%s", exp_stack_tmp->value, (*func_it).first.c_str());
     }
@@ -1358,6 +1471,7 @@ void toBool()
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
+    exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
 
     PrintSpace();
@@ -1385,6 +1499,7 @@ void toInt()
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 3;
     exp_stack_tmp->value = ++temp_register;
+    exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
 
     PrintSpace();
