@@ -1,18 +1,5 @@
+int a = 2;
 int main() {
-    int a;
-    a = 5;
-    int b;
-    b = 10;
-    if (a == 6 || b == 0xb) {
-        return a;
-    } else {
-        if (b == 10 && a == 1)
-            a = 25;
-        else if (b == 10 && a == -5)
-            a = a + 15;
-        else
-            a = -+a;
-    }
-    putint(a);
+    int a = 1;
     return 0;
 }

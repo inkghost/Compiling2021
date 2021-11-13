@@ -6,6 +6,64 @@
 
 using namespace std;
 
+typedef struct
+{
+    // 1 操作数，2 运算符，3 临时寄存器, 4 正负号运算, 5 布尔值
+    int type;
+    // 操作数的值
+    // 运算符：18 +,19 -,20 *,21 /,22 %, 23 !, 24 <, 25 >, 26 <=, 27 >=, 28 ==, 29 !=, 30 &&, 31 ||
+    // 临时寄存器的次序
+    int value;
+} ExpItem;
+
+typedef struct
+{
+    // 是否是常量
+    bool is_const;
+    // 临时寄存器的值
+    int register_num;
+} VarItem;
+
+typedef struct
+{
+    // 函数返回值类型 0 void, 1 int
+    int type;
+    // 函数参数列表 0 void, 1 int, 2 int*
+    vector<int> params;
+} FuncItem;
+
+typedef struct
+{
+    // 全局变量
+    bool is_global;
+    // 寄存器值
+    bool lval_register;
+    // 标识符
+    char ident[4096];
+} LValReturn;
+
+// 全局变量map
+map<string, VarItem> global_var_map;
+// 变量map
+map<string, VarItem> var_map;
+// 变量迭代器
+map<string, VarItem>::iterator var_it;
+// 函数map
+map<string, FuncItem> func_map;
+// 函数迭代器
+map<string, FuncItem>::iterator func_it;
+
+int temp_register = 0;
+
+ExpItem *exp_stack_tmp;
+
+// LVal()获取变量
+LValReturn lval_return;
+
+stack<ExpItem> exp_stack;
+// 变量 map 队列
+list<map<string, VarItem>> var_map_list;
+
 void CompUnit();
 void Decl();
 void ConstDecl();
@@ -23,7 +81,7 @@ void BlockItem();
 void Stmt();
 void Exp();
 void Cond();
-int LVal();
+void LVal();
 void PrimaryExp();
 void UnaryExp();
 void UnaryOp();
@@ -38,7 +96,7 @@ void LOrExp();
 // 四则运算
 void Operation();
 // 非运算
-void NotOperation(struct ExpItem);
+void NotOperation(ExpItem);
 // 比较运算
 void CmpOperation();
 // 位运算
@@ -61,63 +119,52 @@ bool this_is_const;
 bool is_in_cond;
 // 记录基础块个数
 int basic_block;
-
-struct ExpItem
-{
-    // 1 操作数，2 运算符，3 临时寄存器, 4 正负号运算, 5 布尔值
-    int type;
-    // 操作数的值
-    // 运算符：18 +,19 -,20 *,21 /,22 %, 23 !, 24 <, 25 >, 26 <=, 27 >=, 28 ==, 29 !=, 30 &&, 31 ||
-    // 临时寄存器的次序
-    int value;
-};
-
-struct VarItem
-{
-    // 是否是常量
-    bool is_const;
-    // 临时寄存器的值
-    int register_num;
-};
-
-struct FuncItem
-{
-    // 函数返回值类型 0 void, 1 int
-    int type;
-    // 函数参数列表 0 void, 1 int, 2 int*
-    vector<int> params;
-};
-
-// 全局变量map
-map<string, struct VarItem> global_var_map;
-// 变量map
-map<string, struct VarItem> var_map;
-// 变量迭代器
-map<string, struct VarItem>::iterator var_it;
-// 函数map
-map<string, struct FuncItem> func_map;
-// 函数迭代器
-map<string, struct FuncItem>::iterator func_it;
-
-int temp_register = 0;
-
-struct ExpItem *exp_stack_tmp;
-
-stack<struct ExpItem> exp_stack;
-// 变量 map 队列
-list<map<string, struct VarItem>> var_map_list;
+// 记录是否在全局环境中
+bool is_in_global;
 
 void CompUnit()
 {
+    // 记录是否经历过循环
+    bool have_loop = false;
     FuncMapInit();
 
-    fprintf(fp_ir, "define dso_local ");
+    Lexical sym_list[3];
 
-    nextsym();
-    FuncDef();
+    while (true)
+    {
+        nextsym();
+        sym_list[0] = sym;
+        nextsym();
+        sym_list[1] = sym;
+        nextsym();
+        sym_list[2] = sym;
 
-    nextsym();
-    if (sym.type != 34)
+        backsysm(sym_list[2]);
+        backsysm(sym_list[1]);
+        backsysm(sym_list[0]);
+
+        if (sym.type != 34)
+        {
+            break;
+        }
+        else if (sym.type == 9)
+        {
+            is_in_global = false;
+            nextsym();
+            fprintf(fp_ir, "define dso_local ");
+            FuncDef();
+        }
+        else
+        {
+            is_in_global = true;
+            nextsym();
+            Decl();
+        }
+
+        have_loop = true;
+    }
+
+    if (!have_loop)
     {
         throw "Error";
     }
@@ -175,7 +222,7 @@ void ConstDef()
     {
         throw "Error";
     }
-    struct VarItem *var_item_tmp;
+    VarItem *var_item_tmp;
 
     // 检查变量是否重复声明
     var_it = var_map.find((string)sym.ident);
@@ -184,7 +231,7 @@ void ConstDef()
         throw "Error";
     }
 
-    var_item_tmp = (struct VarItem *)malloc(sizeof(struct VarItem));
+    var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
     var_item_tmp->is_const = true;
     var_item_tmp->register_num = ++temp_register;
 
@@ -257,7 +304,7 @@ void VarDef()
     {
         throw "Error";
     }
-    struct VarItem *var_item_tmp;
+    VarItem *var_item_tmp;
 
     // 检查变量是否重复声明
     var_it = var_map.find((string)sym.ident);
@@ -266,7 +313,7 @@ void VarDef()
         throw "Error";
     }
 
-    var_item_tmp = (struct VarItem *)malloc(sizeof(struct VarItem));
+    var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
     var_item_tmp->is_const = false;
     var_item_tmp->register_num = ++temp_register;
 
@@ -444,7 +491,7 @@ void Stmt()
             throw "Error";
         }
 
-        struct ExpItem cond = exp_stack.top();
+        ExpItem cond = exp_stack.top();
         if (cond.type != 5)
         {
             throw "Error";
@@ -505,7 +552,9 @@ void Stmt()
             sym = tmp_sym;
 
             this_is_const = false;
-            int lval_register = LVal();
+            LVal();
+
+            LValReturn tmp_lval_return = lval_return;
 
             if (this_is_const)
             {
@@ -519,11 +568,25 @@ void Stmt()
             PrintSpace();
             if (exp_stack_tmp->type == 1)
             {
-                fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, lval_register);
+                if (tmp_lval_return.is_global)
+                {
+                    fprintf(fp_ir, "store i32 %d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
+                }
+                else
+                {
+                    fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.lval_register);
+                }
             }
             else if (exp_stack_tmp->type == 3)
             {
-                fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, lval_register);
+                if (tmp_lval_return.is_global)
+                {
+                    fprintf(fp_ir, "store i32 %%x%d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
+                }
+                else
+                {
+                    fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.lval_register);
+                }
             }
             else
             {
@@ -562,8 +625,12 @@ void Cond()
     is_in_cond = false;
 }
 
-int LVal()
+void LVal()
 {
+    lval_return.is_global = false;
+    lval_return.lval_register = 0;
+    strcpy(lval_return.ident, sym.ident);
+
     if (sym.type != 33)
     {
         throw "Error";
@@ -580,7 +647,7 @@ int LVal()
 
     if (!is_declared)
     {
-        for (list<map<string, struct VarItem>>::reverse_iterator it = var_map_list.rbegin(); it != var_map_list.rend(); ++it)
+        for (list<map<string, VarItem>>::reverse_iterator it = var_map_list.rbegin(); it != var_map_list.rend(); ++it)
         {
             var_it = (*it).find((string)sym.ident);
             if (var_it != (*it).end())
@@ -598,6 +665,7 @@ int LVal()
         {
             throw "Error";
         }
+        lval_return.is_global = true;
     }
 
     if ((*var_it).second.is_const)
@@ -609,7 +677,7 @@ int LVal()
         have_var_in_cal = true;
     }
 
-    return (*var_it).second.register_num;
+    lval_return.lval_register = (*var_it).second.register_num;
 }
 
 void PrimaryExp()
@@ -629,7 +697,7 @@ void PrimaryExp()
     }
     else if (sym.type == 32)
     {
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 1;
         exp_stack_tmp->value = sym.value;
         exp_stack.push(*exp_stack_tmp);
@@ -637,15 +705,22 @@ void PrimaryExp()
     }
     else if (sym.type == 33)
     {
-        int lval_register = LVal();
+        LVal();
 
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 3;
         exp_stack_tmp->value = ++temp_register;
         exp_stack.push(*exp_stack_tmp);
 
         PrintSpace();
-        fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d", exp_stack_tmp->value, lval_register);
+        if (lval_return.is_global)
+        {
+            fprintf(fp_ir, "%%x%d = load i32, i32* @%s\n", exp_stack_tmp->value, lval_return.ident);
+        }
+        else
+        {
+            fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.lval_register);
+        }
 
         nextsym();
     }
@@ -667,7 +742,7 @@ void UnaryExp()
         nextsym();
         UnaryExp();
 
-        struct ExpItem num = exp_stack.top();
+        ExpItem num = exp_stack.top();
         exp_stack.pop();
         if (num.type != 1 && num.type != 3)
         {
@@ -680,7 +755,7 @@ void UnaryExp()
             return;
         }
 
-        struct ExpItem op = exp_stack.top();
+        ExpItem op = exp_stack.top();
         exp_stack.pop();
         // 进行单目前缀运算
         if (op.type != 4)
@@ -743,15 +818,22 @@ void UnaryExp()
         else
         {
             swap(tmp_sym, sym);
-            int lval_register = LVal();
+            LVal();
 
-            exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+            exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
             exp_stack_tmp->type = 3;
             exp_stack_tmp->value = ++temp_register;
             exp_stack.push(*exp_stack_tmp);
 
             PrintSpace();
-            fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_register);
+            if (lval_return.is_global)
+            {
+                fprintf(fp_ir, "%%x%d = load i32, i32* @%s\n", exp_stack_tmp->value, lval_return.ident);
+            }
+            else
+            {
+                fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.lval_register);
+            }
 
             swap(tmp_sym, sym);
         }
@@ -766,7 +848,7 @@ void UnaryOp()
 {
     if (sym.type == 18 || sym.type == 19 || (is_in_cond && sym.type == 23))
     {
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 4;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -799,7 +881,7 @@ void MulExp()
         {
             break;
         }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -820,7 +902,7 @@ void AddExp()
         {
             break;
         }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -840,7 +922,7 @@ void RelExp()
         {
             break;
         }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -861,7 +943,7 @@ void EqExp()
         {
             break;
         }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -883,7 +965,7 @@ void LAndExp()
         {
             break;
         }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -904,7 +986,7 @@ void LOrExp()
         {
             break;
         }
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack.push(*exp_stack_tmp);
@@ -918,7 +1000,7 @@ void LOrExp()
 // 处理四则运算
 void Operation()
 {
-    struct ExpItem num1, num2, op;
+    ExpItem num1, num2, op;
 
     num2 = exp_stack.top();
     if (num2.type != 1 && num2.type != 3)
@@ -941,7 +1023,7 @@ void Operation()
     }
     exp_stack.pop();
 
-    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 3;
     exp_stack_tmp->value = ++temp_register;
     exp_stack.push(*exp_stack_tmp);
@@ -987,7 +1069,7 @@ void Operation()
     }
 }
 
-void NotOperation(struct ExpItem num)
+void NotOperation(ExpItem num)
 {
     // 进行非运算
     PrintSpace();
@@ -1000,7 +1082,7 @@ void NotOperation(struct ExpItem num)
         fprintf(fp_ir, "%%x%d = icmp eq i32 %%x%d, 0\n", ++temp_register, num.value);
     }
 
-    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 3;
     exp_stack_tmp->value = ++temp_register;
     exp_stack.push(*exp_stack_tmp);
@@ -1013,7 +1095,7 @@ void NotOperation(struct ExpItem num)
 // 处理比较运算
 void CmpOperation()
 {
-    struct ExpItem num1, num2, op;
+    ExpItem num1, num2, op;
 
     num2 = exp_stack.top();
     if (num2.type != 1 && num2.type != 3)
@@ -1036,7 +1118,7 @@ void CmpOperation()
     }
     exp_stack.pop();
 
-    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
     exp_stack.push(*exp_stack_tmp);
@@ -1088,7 +1170,7 @@ void CmpOperation()
 // 处理与或运算
 void BitOperation()
 {
-    struct ExpItem num1, num2, op;
+    ExpItem num1, num2, op;
 
     num2 = exp_stack.top();
     if (num2.type != 5)
@@ -1111,7 +1193,7 @@ void BitOperation()
     }
     exp_stack.pop();
 
-    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
     exp_stack.push(*exp_stack_tmp);
@@ -1139,21 +1221,21 @@ void PrintSpace()
 void FuncMapInit()
 {
     fprintf(fp_ir, "declare i32 @getint()\n");
-    struct FuncItem func_getint;
+    FuncItem func_getint;
     vector<int> getint;
     func_getint.type = 1;
     func_getint.params = getint;
     func_map["getint"] = func_getint;
 
     fprintf(fp_ir, "declare i32 @getch()\n");
-    struct FuncItem func_getch;
+    FuncItem func_getch;
     vector<int> getch;
     func_getch.type = 1;
     func_getch.params = getch;
     func_map["getch"] = func_getch;
 
     fprintf(fp_ir, "declare i32 @getarray(i32*)\n");
-    struct FuncItem func_getarray;
+    FuncItem func_getarray;
     vector<int> getarray;
     getarray.push_back(2);
     func_getarray.type = 1;
@@ -1161,7 +1243,7 @@ void FuncMapInit()
     func_map["getarray"] = func_getarray;
 
     fprintf(fp_ir, "declare void @putint(i32)\n");
-    struct FuncItem func_putint;
+    FuncItem func_putint;
     vector<int> putint;
     putint.push_back(1);
     func_putint.type = 0;
@@ -1169,7 +1251,7 @@ void FuncMapInit()
     func_map["putint"] = func_putint;
 
     fprintf(fp_ir, "declare void @putch(i32)\n");
-    struct FuncItem func_putch;
+    FuncItem func_putch;
     vector<int> putch;
     putch.push_back(1);
     func_putch.type = 0;
@@ -1177,7 +1259,7 @@ void FuncMapInit()
     func_map["putch"] = func_putch;
 
     fprintf(fp_ir, "declare void @putarray(i32,i32*)\n");
-    struct FuncItem func_putarray;
+    FuncItem func_putarray;
     vector<int> putarray;
     putarray.push_back(1);
     putarray.push_back(2);
@@ -1209,7 +1291,7 @@ void FuncCall()
     }
     else
     {
-        exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
         exp_stack_tmp->type = 3;
         exp_stack_tmp->value = ++temp_register;
         PrintSpace();
@@ -1264,7 +1346,7 @@ void FuncCall()
 
 void toBool()
 {
-    struct ExpItem num;
+    ExpItem num;
 
     num = exp_stack.top();
     if (num.type != 1 && num.type != 3)
@@ -1273,7 +1355,7 @@ void toBool()
     }
     exp_stack.pop();
 
-    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
     exp_stack.push(*exp_stack_tmp);
@@ -1291,7 +1373,7 @@ void toBool()
 
 void toInt()
 {
-    struct ExpItem num;
+    ExpItem num;
 
     num = exp_stack.top();
     if (num.type != 5)
@@ -1300,7 +1382,7 @@ void toInt()
     }
     exp_stack.pop();
 
-    exp_stack_tmp = (struct ExpItem *)malloc(sizeof(struct ExpItem));
+    exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
     exp_stack_tmp->type = 3;
     exp_stack_tmp->value = ++temp_register;
     exp_stack.push(*exp_stack_tmp);

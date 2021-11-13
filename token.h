@@ -25,7 +25,7 @@ int oct2dec(char *);
 
 void identJudge(char *);
 
-typedef struct lexical
+typedef struct
 {
     int type;
     int value;
@@ -522,4 +522,6 @@ void backsysm(Lexical old_sym)
     {
         ungetc(token[i], fp_input);
     }
+
+    ungetc(' ', fp_input);
 }
