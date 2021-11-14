@@ -68,10 +68,12 @@ ExpItem *exp_stack_tmp;
 
 // LVal()获取变量
 LValReturn lval_return;
-
+// 表达式栈
 stack<ExpItem> exp_stack;
 // 变量 map 队列
 list<map<string, VarItem>> var_map_list;
+// 记录循环语句嵌套栈
+stack<int> loop_stack;
 
 // 记录运算过程中是否出现变量
 bool have_var_in_cal;
@@ -79,7 +81,7 @@ bool have_var_in_cal;
 bool this_is_const;
 // 记录是否处于 Cond 判断中
 bool is_in_cond;
-// 记录基础块个数
+// 记录基础块编号
 int basic_block;
 // 记录是否在全局环境中
 bool is_in_global;
@@ -535,6 +537,7 @@ void BlockItem()
 
 void Stmt()
 {
+    // return 语句
     if (sym.type == 8)
     {
         nextsym();
@@ -575,8 +578,10 @@ void Stmt()
             throw "Error";
         }
 
+        nest_layer++;
         nextsym();
         Cond();
+        nest_layer--;
 
         if (sym.type != 10)
         {
@@ -635,6 +640,98 @@ void Stmt()
 
         // out block
         fprintf(fp_ir, "basic_block_%d:\n", out_block);
+    }
+    // 循环语句
+    else if (sym.type == 5)
+    {
+        nextsym();
+        if (sym.type != 9)
+        {
+            throw "Error";
+        }
+
+        int cond_block = ++basic_block;
+        PrintSpace();
+
+        fprintf(fp_ir, "br label %%basic_block_%d\n", cond_block);
+        fprintf(fp_ir, "basic_block_%d:\n", cond_block);
+        nest_layer++;
+        nextsym();
+        Cond();
+        nest_layer--;
+
+        if (sym.type != 10)
+        {
+            throw "Error";
+        }
+
+        ExpItem cond = exp_stack.top();
+        if (cond.type != 5)
+        {
+            throw "Error";
+        }
+        exp_stack.pop();
+
+        int while_block = ++basic_block;
+        int out_block = ++basic_block;
+        loop_stack.push(out_block);
+        loop_stack.push(cond_block);
+
+        PrintSpace();
+        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, while_block, out_block);
+
+        // while bolck
+        fprintf(fp_ir, "basic_block_%d:\n", while_block);
+
+        nest_layer++;
+        nextsym();
+        Stmt();
+        nest_layer--;
+
+        loop_stack.pop();
+        loop_stack.pop();
+
+        PrintSpace();
+        fprintf(fp_ir, "br label %%basic_block_%d\n", cond_block);
+        // out block
+        fprintf(fp_ir, "basic_block_%d:\n", out_block);
+    }
+    // break 语句
+    else if (sym.type == 6)
+    {
+        if(loop_stack.size() < 2)
+        {
+            throw "Error";
+        }
+
+        int cond_block = loop_stack.top();
+        loop_stack.pop();
+        PrintSpace();
+        fprintf(fp_ir, "br label %%basic_block_%d\n", loop_stack.top());
+        loop_stack.push(cond_block);
+
+        nextsym();
+        if (sym.type != 15)
+        {
+            throw "Error";
+        }
+    }
+    // continue 语句
+    else if (sym.type == 7)
+    {
+        if(loop_stack.size() < 2)
+        {
+            throw "Error";
+        }
+
+        PrintSpace();
+        fprintf(fp_ir, "br label %%basic_block_%d\n", loop_stack.top());
+
+        nextsym();
+        if (sym.type != 15)
+        {
+            throw "Error";
+        }
     }
     else if (sym.type == 33)
     {
@@ -810,7 +907,7 @@ void PrimaryExp()
         LVal();
 
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-        if (lval_return.var_item->have_real_value)
+        if (lval_return.var_item->have_real_value && lval_return.var_item->nest_layer == nest_layer)
         {
             exp_stack_tmp->type = 1;
             exp_stack_tmp->value = lval_return.var_item->real_value;
@@ -943,7 +1040,7 @@ void UnaryExp()
             LVal();
 
             exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-            if (lval_return.var_item->have_real_value)
+            if (lval_return.var_item->have_real_value && lval_return.var_item->nest_layer == nest_layer)
             {
                 exp_stack_tmp->type = 1;
                 exp_stack_tmp->value = lval_return.var_item->real_value;
