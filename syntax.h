@@ -381,7 +381,7 @@ void VarDef()
     {
         if (is_in_global)
         {
-            fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
+            fprintf(fp_ir, "@%s = dso_local global i32 0\n", ident.c_str());
             var_item_tmp->have_real_value = true;
             var_item_tmp->real_value = 0;
             var_map[ident] = *var_item_tmp;
