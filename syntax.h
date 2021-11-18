@@ -699,7 +699,7 @@ void Stmt()
     // break 语句
     else if (sym.type == 6)
     {
-        if(loop_stack.size() < 2)
+        if (loop_stack.size() < 2)
         {
             throw "Error";
         }
@@ -719,7 +719,7 @@ void Stmt()
     // continue 语句
     else if (sym.type == 7)
     {
-        if(loop_stack.size() < 2)
+        if (loop_stack.size() < 2)
         {
             throw "Error";
         }
@@ -798,7 +798,13 @@ void Stmt()
 
         if (sym.type != 15)
         {
-            throw "Error";
+            Exp();
+            exp_stack.pop();
+
+            if (sym.type != 15)
+            {
+                throw "Error";
+            }
         }
     }
     else if (sym.type != 15)
