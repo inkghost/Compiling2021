@@ -8,7 +8,7 @@ using namespace std;
 
 typedef struct
 {
-    // 1 操作数，2 运算符，3 临时寄存器, 4 正负号运算, 5 布尔值
+    // 1 操作数，2 运算符，3 i32临时寄存器, 4 正负号运算, 5 布尔值, 6 i32*临时寄存器
     int type;
     // 操作数的值
     // 运算符：18 +,19 -,20 *,21 /,22 %, 23 !, 24 <, 25 >, 26 <=, 27 >=, 28 ==, 29 !=, 30 &&, 31 ||
@@ -22,10 +22,24 @@ typedef struct
 
 typedef struct
 {
+    // 维度
+    vector<int> dimension;
+    // 每个维度的步长
+    vector<int> step;
+    // 数组的值
+    vector<int> value;
+    // 数组大小
+    int size;
+} ArrayProper;
+
+typedef struct
+{
     // 全局变量
     bool is_global;
     // 是否是常量
     bool is_const;
+    // 是否是数组
+    bool is_array;
     // 临时寄存器的值
     int register_num;
     // 是否有实值
@@ -34,6 +48,8 @@ typedef struct
     int real_value;
     // 嵌套层数
     int nest_layer;
+    // 数组属性
+    ArrayProper array_proper;
 } VarItem;
 
 typedef struct
@@ -74,6 +90,8 @@ stack<ExpItem> exp_stack;
 list<map<string, VarItem>> var_map_list;
 // 记录循环语句嵌套栈
 stack<int> loop_stack;
+// 当前正在声明的数组变量
+VarItem *var_in_def;
 
 // 记录运算过程中是否出现变量
 bool have_var_in_cal;
@@ -81,6 +99,12 @@ bool have_var_in_cal;
 bool this_is_const;
 // 记录是否处于 Cond 判断中
 bool is_in_cond;
+// 记录是否在数组定义过程中
+bool is_in_arr_def;
+// 数组定义嵌套层数
+int arr_def_nest;
+// 数组定义偏移量
+int arr_def_offset;
 // 记录基础块编号
 int basic_block;
 // 记录是否在全局环境中
@@ -167,12 +191,14 @@ void CompUnit()
             nextsym();
             fprintf(fp_ir, "define dso_local ");
             FuncDef();
+            fprintf(fp_ir, "\n");
         }
         else
         {
             is_in_global = true;
             nextsym();
             Decl();
+            fprintf(fp_ir, "\n");
         }
 
         have_loop = true;
@@ -232,6 +258,7 @@ void BType()
 
 void ConstDef()
 {
+    is_in_arr_def = false;
     if (sym.type != 33)
     {
         throw "Error";
@@ -240,7 +267,7 @@ void ConstDef()
     string ident = sym.ident;
 
     // 检查变量是否重复声明
-    var_it = var_map.find((string)sym.ident);
+    var_it = var_map.find(ident);
     if (var_it != var_map.end())
     {
         throw "Error";
@@ -249,78 +276,266 @@ void ConstDef()
     var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
     var_item_tmp->is_const = true;
     var_item_tmp->register_num = ++temp_register;
-    var_item_tmp->have_real_value = false;
+    var_item_tmp->have_real_value = true;
     var_item_tmp->is_global = is_in_global;
     var_item_tmp->nest_layer = nest_layer;
+    var_item_tmp->is_array = false;
 
-    var_map[sym.ident] = *var_item_tmp;
-
-    if (!is_in_global)
-    {
-        PrintSpace();
-        fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
-    }
-
+    // 判断是否是数组
     nextsym();
-    if (sym.type != 17)
+    if (sym.type == 11)
     {
-        throw "Error";
-    }
+        is_in_arr_def = true;
+        var_item_tmp->is_array = true;
+        var_item_tmp->array_proper.size = 1;
+        have_var_in_cal = false;
+        while (sym.type == 11)
+        {
+            nextsym();
+            ConstExp();
 
-    nextsym();
-    ConstInitVal();
+            exp_stack_tmp = &exp_stack.top();
+            // 数组维度必须为非负常量表达式
+            if (exp_stack_tmp->type != 1 || exp_stack_tmp->value <= 0)
+            {
+                throw "Error";
+            }
+            // 更新数组信息
+            var_item_tmp->array_proper.size *= exp_stack_tmp->value;
+            var_item_tmp->array_proper.dimension.push_back(exp_stack_tmp->value);
+            for (int i = 0; i < var_item_tmp->array_proper.step.size(); i++)
+            {
+                var_item_tmp->array_proper.step[i] *= exp_stack_tmp->value;
+            }
+            var_item_tmp->array_proper.step.push_back(1);
 
-    exp_stack_tmp = &exp_stack.top();
-    if (is_in_global)
-    {
-        if (exp_stack_tmp->type != 1)
+            if (sym.type != 12)
+            {
+                throw "Error";
+            }
+            nextsym();
+        }
+        // 维度计算过程中必须为常量表达式
+        if (have_var_in_cal)
         {
             throw "Error";
         }
-        fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
-        var_item_tmp->have_real_value = true;
-        var_item_tmp->real_value = exp_stack_tmp->value;
-        var_map[ident] = *var_item_tmp;
-    }
-    else if (exp_stack_tmp->type == 1)
-    {
-        PrintSpace();
-        fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
-        var_item_tmp->have_real_value = true;
-        var_item_tmp->real_value = exp_stack_tmp->value;
-        var_map[ident] = *var_item_tmp;
-    }
-    else if (exp_stack_tmp->type == 3)
-    {
-        if (exp_stack_tmp->have_real_value)
+        // 数组存值初始化
+        for (int i = 0; i < var_item_tmp->array_proper.size; i++)
         {
-            PrintSpace();
-            fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
-            var_item_tmp->have_real_value = true;
-            var_item_tmp->real_value = exp_stack_tmp->real_value;
-            var_map[ident] = *var_item_tmp;
+            var_item_tmp->array_proper.value.push_back(0);
         }
+    }
+    backsysm(sym);
+
+    var_map[sym.ident] = *var_item_tmp;
+
+    // 数组定义处理
+    if (is_in_arr_def)
+    {
+        var_in_def = var_item_tmp;
+        arr_def_nest = 0;
+        arr_def_offset = 0;
+
+        nextsym();
+        if (sym.type != 17)
+        {
+            throw "Error";
+        }
+
+        nextsym();
+        have_var_in_cal = false;
+        ConstInitVal();
+        if (have_var_in_cal)
+        {
+            throw "Error";
+        }
+
+        bool have_nonzero = false;
+        for (int i = 0; i < var_in_def->array_proper.size; i++)
+        {
+            if (var_in_def->array_proper.value[i] != 0)
+            {
+                have_nonzero = true;
+                break;
+            }
+        }
+
+        // 全局数组
+        if (is_in_global)
+        {
+            fprintf(fp_ir, "@%s = dso_local global [%d x i32] ", ident.c_str(), var_in_def->array_proper.size);
+            if (!have_nonzero)
+            {
+                fprintf(fp_ir, "zeroinitializer\n");
+            }
+            else
+            {
+                for (int i = 0; i < var_in_def->array_proper.value.size(); i++)
+                {
+                    if (i == 0)
+                    {
+                        fprintf(fp_ir, "[i32 %d", var_in_def->array_proper.value[i]);
+                    }
+                    else
+                    {
+                        fprintf(fp_ir, ", i32 %d", var_in_def->array_proper.value[i]);
+                    }
+                }
+                fprintf(fp_ir, "]\n");
+            }
+        }
+        // 局部数组
         else
         {
             PrintSpace();
-            fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+            fprintf(fp_ir, "%%x%d = alloca [%d x i32]\n", var_in_def->register_num, var_in_def->array_proper.size);
+            PrintSpace();
+            fprintf(fp_ir, "%%x%d = getelementptr [%d x i32], [%d x i32]* %%x%d, i32 0, i32 0\n",
+                    ++temp_register, var_in_def->array_proper.size, var_in_def->array_proper.size, var_in_def->register_num);
+            PrintSpace();
+            fprintf(fp_ir, "call void @memset(i32* %%x%d,i32 0,i32 %d)\n", temp_register, var_in_def->array_proper.size);
+            if (have_nonzero)
+            {
+                for (int i = 0; i < var_in_def->array_proper.size; i++)
+                {
+                    if (var_in_def->array_proper.value[i] != 0)
+                    {
+                        PrintSpace();
+                        fprintf(fp_ir, "%%x%d = getelementptr [%d x i32], [%d x i32]* %%x%d, i32 0, i32 %d\n",
+                                ++temp_register, var_in_def->array_proper.size, var_in_def->array_proper.size, var_in_def->register_num, i);
+                        PrintSpace();
+                        fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", var_in_def->array_proper.value[i], temp_register);
+                    }
+                }
+            }
         }
+
+        var_map[ident] = *var_in_def;
     }
+    // int 定义处理
     else
     {
-        throw "Error";
-    }
+        if (!is_in_global)
+        {
+            PrintSpace();
+            fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
+        }
 
-    exp_stack.pop();
+        nextsym();
+        if (sym.type != 17)
+        {
+            throw "Error";
+        }
+
+        nextsym();
+        have_var_in_cal = false;
+        ConstInitVal();
+        if (have_var_in_cal)
+        {
+            throw "Error";
+        }
+
+        exp_stack_tmp = &exp_stack.top();
+        if (is_in_global)
+        {
+            if (exp_stack_tmp->type != 1)
+            {
+                throw "Error";
+            }
+            fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
+            var_item_tmp->real_value = exp_stack_tmp->value;
+            var_map[ident] = *var_item_tmp;
+        }
+        else if (exp_stack_tmp->type == 1)
+        {
+            PrintSpace();
+            fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+            var_item_tmp->real_value = exp_stack_tmp->value;
+            var_map[ident] = *var_item_tmp;
+        }
+        else if (exp_stack_tmp->type == 3)
+        {
+            if (exp_stack_tmp->have_real_value)
+            {
+                PrintSpace();
+                fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
+                var_item_tmp->real_value = exp_stack_tmp->real_value;
+                var_map[ident] = *var_item_tmp;
+            }
+            else
+            {
+                throw "Error";
+            }
+        }
+        else
+        {
+            throw "Error";
+        }
+
+        exp_stack.pop();
+    }
 }
 
 void ConstInitVal()
 {
-    have_var_in_cal = false;
-    ConstExp();
-    if (have_var_in_cal)
+    if (is_in_arr_def)
     {
-        throw "Error";
+        if (sym.type == 13)
+        {
+            nextsym();
+            if (sym.type == 14)
+            {
+                nextsym();
+                return;
+            }
+
+            backsysm(sym);
+            int i = 0;
+            do
+            {
+                if (i >= var_in_def->array_proper.dimension[arr_def_nest])
+                {
+                    throw "Error";
+                }
+
+                int offset = var_in_def->array_proper.step[arr_def_nest] * i;
+                arr_def_offset += offset;
+                arr_def_nest++;
+
+                nextsym();
+                ConstInitVal();
+
+                arr_def_nest--;
+                arr_def_offset -= offset;
+                i++;
+            } while (sym.type == 16);
+
+            if (sym.type != 14)
+            {
+                throw "Error";
+            }
+            nextsym();
+        }
+        else if (arr_def_nest == var_in_def->array_proper.dimension.size())
+        {
+            ConstExp();
+            exp_stack_tmp = &exp_stack.top();
+            if (exp_stack_tmp->type != 1)
+            {
+                throw "Error";
+            }
+            var_in_def->array_proper.value[arr_def_offset] = exp_stack_tmp->value;
+            exp_stack.pop();
+        }
+        else
+        {
+            throw "Error";
+        }
+    }
+    else
+    {
+        ConstExp();
     }
 }
 
@@ -347,6 +562,7 @@ void VarDecl()
 
 void VarDef()
 {
+    is_in_arr_def = false;
     if (sym.type != 33)
     {
         throw "Error";
@@ -355,7 +571,7 @@ void VarDef()
     string ident = sym.ident;
 
     // 检查变量是否重复声明
-    var_it = var_map.find((string)sym.ident);
+    var_it = var_map.find(ident);
     if (var_it != var_map.end())
     {
         throw "Error";
@@ -367,82 +583,287 @@ void VarDef()
     var_item_tmp->have_real_value = false;
     var_item_tmp->is_global = is_in_global;
     var_item_tmp->nest_layer = nest_layer;
+    var_item_tmp->is_array = false;
 
-    var_map[sym.ident] = *var_item_tmp;
-
-    if (!is_in_global)
-    {
-        PrintSpace();
-        fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
-    }
-
+    // 判断是否是数组
     nextsym();
-    if (sym.type != 17)
+    if (sym.type == 11)
     {
-        if (is_in_global)
+        is_in_arr_def = true;
+        var_item_tmp->is_array = true;
+        var_item_tmp->array_proper.size = 1;
+        have_var_in_cal = false;
+        while (sym.type == 11)
         {
-            fprintf(fp_ir, "@%s = dso_local global i32 0\n", ident.c_str());
-            var_item_tmp->have_real_value = true;
-            var_item_tmp->real_value = 0;
-            var_map[ident] = *var_item_tmp;
+            nextsym();
+            ConstExp();
+
+            exp_stack_tmp = &exp_stack.top();
+            // 数组维度必须为非负常量表达式
+            if (exp_stack_tmp->type != 1 || exp_stack_tmp->value <= 0)
+            {
+                throw "Error";
+            }
+            // 更新数组信息
+            var_item_tmp->array_proper.size *= exp_stack_tmp->value;
+            var_item_tmp->array_proper.dimension.push_back(exp_stack_tmp->value);
+            for (int i = 0; i < var_item_tmp->array_proper.step.size(); i++)
+            {
+                var_item_tmp->array_proper.step[i] *= exp_stack_tmp->value;
+            }
+            var_item_tmp->array_proper.step.push_back(1);
+
+            if (sym.type != 12)
+            {
+                throw "Error";
+            }
+            nextsym();
         }
-        return;
-    }
-
-    nextsym();
-    InitVal();
-
-    exp_stack_tmp = &exp_stack.top();
-    if (is_in_global)
-    {
-        if (exp_stack_tmp->type != 1)
+        // 维度计算过程中必须为常量表达式
+        if (have_var_in_cal)
         {
             throw "Error";
         }
-        fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
-        var_item_tmp->have_real_value = true;
-        var_item_tmp->real_value = exp_stack_tmp->value;
-        var_map[ident] = *var_item_tmp;
+        // 数组存值初始化
+        for (int i = 0; i < var_item_tmp->array_proper.size; i++)
+        {
+            var_item_tmp->array_proper.value.push_back(0);
+        }
     }
-    else if (exp_stack_tmp->type == 1)
+    backsysm(sym);
+
+    var_map[sym.ident] = *var_item_tmp;
+
+    // 数组定义处理
+    if (is_in_arr_def)
     {
-        PrintSpace();
-        fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
-        var_item_tmp->have_real_value = true;
-        var_item_tmp->real_value = exp_stack_tmp->value;
-        var_map[ident] = *var_item_tmp;
-    }
-    else if (exp_stack_tmp->type == 3)
-    {
-        if (exp_stack_tmp->have_real_value)
+        var_in_def = var_item_tmp;
+        arr_def_nest = 0;
+        arr_def_offset = 0;
+
+        if (!is_in_global)
         {
             PrintSpace();
-            fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
+            fprintf(fp_ir, "%%x%d = alloca [%d x i32]\n", var_in_def->register_num, var_in_def->array_proper.size);
+        }
+
+        nextsym();
+        if (sym.type != 17)
+        {
+            if (is_in_global)
+            {
+                fprintf(fp_ir, "@%s = dso_local global [%d x i32] zeroinitializer\n", ident.c_str(), var_in_def->array_proper.size);
+                var_map[ident] = *var_item_tmp;
+            }
+            return;
+        }
+
+        nextsym();
+        have_var_in_cal = false;
+        InitVal();
+        if (is_in_global && have_var_in_cal)
+        {
+            throw "Error";
+        }
+
+        // 全局数组
+        if (is_in_global)
+        {
+            bool have_nonzero = false;
+            for (int i = 0; i < var_in_def->array_proper.size; i++)
+            {
+                if (var_in_def->array_proper.value[i] != 0)
+                {
+                    have_nonzero = true;
+                    break;
+                }
+            }
+            fprintf(fp_ir, "@%s = dso_local global [%d x i32] ", ident.c_str(), var_in_def->array_proper.size);
+            if (!have_nonzero)
+            {
+                fprintf(fp_ir, "zeroinitializer\n");
+            }
+            else
+            {
+                for (int i = 0; i < var_in_def->array_proper.value.size(); i++)
+                {
+                    if (i == 0)
+                    {
+                        fprintf(fp_ir, "[i32 %d", var_in_def->array_proper.value[i]);
+                    }
+                    else
+                    {
+                        fprintf(fp_ir, ", i32 %d", var_in_def->array_proper.value[i]);
+                    }
+                }
+                fprintf(fp_ir, "]\n");
+            }
+        }
+
+        var_map[ident] = *var_in_def;
+    }
+    // int 定义处理
+    else
+    {
+        if (!is_in_global)
+        {
+            PrintSpace();
+            fprintf(fp_ir, "%%x%d = alloca i32\n", temp_register);
+        }
+
+        nextsym();
+        if (sym.type != 17)
+        {
+            if (is_in_global)
+            {
+                fprintf(fp_ir, "@%s = dso_local global i32 0\n", ident.c_str());
+                var_item_tmp->have_real_value = true;
+                var_item_tmp->real_value = 0;
+                var_map[ident] = *var_item_tmp;
+            }
+            return;
+        }
+
+        nextsym();
+        have_var_in_cal = false;
+        InitVal();
+        if (is_in_global && have_var_in_cal)
+        {
+            throw "Error";
+        }
+
+        exp_stack_tmp = &exp_stack.top();
+        if (is_in_global)
+        {
+            if (exp_stack_tmp->type != 1)
+            {
+                throw "Error";
+            }
+            fprintf(fp_ir, "@%s = dso_local global i32 %d\n", ident.c_str(), exp_stack_tmp->value);
             var_item_tmp->have_real_value = true;
-            var_item_tmp->real_value = exp_stack_tmp->real_value;
+            var_item_tmp->real_value = exp_stack_tmp->value;
             var_map[ident] = *var_item_tmp;
+        }
+        else if (exp_stack_tmp->type == 1)
+        {
+            PrintSpace();
+            fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+            var_item_tmp->have_real_value = true;
+            var_item_tmp->real_value = exp_stack_tmp->value;
+            var_map[ident] = *var_item_tmp;
+        }
+        else if (exp_stack_tmp->type == 3)
+        {
+            if (exp_stack_tmp->have_real_value)
+            {
+                PrintSpace();
+                fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->real_value, var_item_tmp->register_num);
+                var_item_tmp->have_real_value = true;
+                var_item_tmp->real_value = exp_stack_tmp->real_value;
+                var_map[ident] = *var_item_tmp;
+            }
+            else
+            {
+                PrintSpace();
+                fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+            }
         }
         else
         {
-            PrintSpace();
-            fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, var_item_tmp->register_num);
+            throw "Error";
         }
-    }
-    else
-    {
-        throw "Error";
-    }
 
-    exp_stack.pop();
+        exp_stack.pop();
+    }
 }
 
 void InitVal()
 {
-    have_var_in_cal = false;
-    Exp();
-    if (is_in_global && have_var_in_cal)
+    if (is_in_arr_def)
     {
-        throw "Error";
+        if (sym.type == 13)
+        {
+            nextsym();
+            if (sym.type == 14)
+            {
+                nextsym();
+                return;
+            }
+
+            backsysm(sym);
+            int i = 0;
+            do
+            {
+                if (i >= var_in_def->array_proper.dimension[arr_def_nest])
+                {
+                    throw "Error";
+                }
+
+                int offset = var_in_def->array_proper.step[arr_def_nest] * i;
+                arr_def_offset += offset;
+                arr_def_nest++;
+
+                nextsym();
+                InitVal();
+
+                arr_def_nest--;
+                arr_def_offset -= offset;
+                i++;
+            } while (sym.type == 16);
+
+            if (sym.type != 14)
+            {
+                throw "Error";
+            }
+            nextsym();
+        }
+        else if (arr_def_nest == var_in_def->array_proper.dimension.size())
+        {
+            Exp();
+            exp_stack_tmp = &exp_stack.top();
+
+            if (is_in_global)
+            {
+                if (exp_stack_tmp->type != 1)
+                {
+                    throw "Error";
+                }
+                var_in_def->array_proper.value[arr_def_offset] = exp_stack_tmp->value;
+            }
+            else
+            {
+                if (exp_stack_tmp->type == 1)
+                {
+                    PrintSpace();
+                    fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* %%x%d, i32 0, i32 %d\n",
+                            ++temp_register, var_in_def->array_proper.size, var_in_def->array_proper.size, var_in_def->register_num, arr_def_offset);
+                    PrintSpace();
+                    fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, temp_register);
+                }
+                else if (exp_stack_tmp->type == 3)
+                {
+                    PrintSpace();
+                    fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* %%x%d, i32 0, i32 %d\n",
+                            ++temp_register, var_in_def->array_proper.size, var_in_def->array_proper.size, var_in_def->register_num, arr_def_offset);
+                    PrintSpace();
+                    fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, temp_register);
+                }
+                else
+                {
+                    throw "Error";
+                }
+            }
+
+            exp_stack.pop();
+        }
+        else
+        {
+            throw "Error";
+        }
+    }
+    else
+    {
+        Exp();
     }
 }
 
@@ -743,6 +1164,7 @@ void Stmt()
             sym = tmp_sym;
             Exp();
         }
+        // 变量赋值语句
         else if (sym.type == 17)
         {
             sym = tmp_sym;
@@ -752,7 +1174,7 @@ void Stmt()
 
             LValReturn tmp_lval_return = lval_return;
 
-            if (this_is_const)
+            if (this_is_const || lval_return.var_item->is_array)
             {
                 throw "Error";
             }
@@ -881,6 +1303,83 @@ void LVal()
     }
 
     lval_return.var_item = &(*var_it).second;
+
+    // 数组变量特殊处理
+    if (lval_return.var_item->is_array)
+    {
+        nextsym();
+        // 变量使用的数组维度
+        int dimension_cnt = 0;
+        // 乘积寄存器
+        int mul_register;
+        // 加和寄存器
+        int add_register;
+        while (sym.type == 11)
+        {
+            nextsym();
+            Exp();
+
+            exp_stack_tmp = &exp_stack.top();
+            PrintSpace();
+            if (exp_stack_tmp->type == 1)
+            {
+                fprintf(fp_ir, "%%x%d = mul i32 %d, %d\n",
+                        ++temp_register, exp_stack_tmp->value, lval_return.var_item->array_proper.step[dimension_cnt]);
+            }
+            else
+            {
+                fprintf(fp_ir, "%%x%d = mul i32 %%x%d, %d\n",
+                        ++temp_register, exp_stack_tmp->value, lval_return.var_item->array_proper.step[dimension_cnt]);
+            }
+            mul_register = temp_register;
+
+            PrintSpace();
+            if (dimension_cnt == 0)
+            {
+                fprintf(fp_ir, "%%x%d = add i32 %%x%d, 0\n", ++temp_register, mul_register);
+            }
+            else
+            {
+                fprintf(fp_ir, "%%x%d = add i32 %%x%d, %%x%d\n", ++temp_register, mul_register, add_register);
+            }
+            add_register = temp_register;
+
+            if (sym.type != 12)
+            {
+                throw "Error";
+            }
+            nextsym();
+
+            dimension_cnt++;
+            exp_stack.pop();
+        }
+
+        PrintSpace();
+        // 全局变量
+        if (lval_return.var_item->is_global)
+        {
+            fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* @%s, i32 0, i32 %%x%d\n",
+                    ++temp_register, lval_return.var_item->array_proper.size, lval_return.var_item->array_proper.size, lval_return.ident, add_register);
+        }
+        // 局部变量
+        else
+        {
+            fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* %%x%d, i32 0, i32 %%x%d\n",
+                    ++temp_register, lval_return.var_item->array_proper.size, lval_return.var_item->array_proper.size, lval_return.var_item->register_num, add_register);
+        }
+
+        VarItem *var_item_tmp;
+        var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
+        var_item_tmp->is_const = lval_return.var_item->is_const;
+        var_item_tmp->register_num = temp_register;
+        var_item_tmp->have_real_value = false;
+        // 该标志用于 load 操作的 @/% 输出判断
+        var_item_tmp->is_global = false;
+        var_item_tmp->nest_layer = lval_return.var_item->nest_layer;
+        var_item_tmp->is_array = dimension_cnt != lval_return.var_item->array_proper.dimension.size();
+
+        lval_return.var_item = var_item_tmp;
+    }
 }
 
 void PrimaryExp()
@@ -919,6 +1418,14 @@ void PrimaryExp()
             exp_stack_tmp->value = lval_return.var_item->real_value;
             exp_stack_tmp->have_real_value = true;
             exp_stack_tmp->real_value = lval_return.var_item->real_value;
+            exp_stack.push(*exp_stack_tmp);
+        }
+        // 数组地址
+        else if (lval_return.var_item->is_array)
+        {
+            exp_stack_tmp->type = 6;
+            exp_stack_tmp->value = lval_return.var_item->register_num;
+            exp_stack_tmp->have_real_value = false;
             exp_stack.push(*exp_stack_tmp);
         }
         else
@@ -1043,6 +1550,7 @@ void UnaryExp()
         else
         {
             swap(tmp_sym, sym);
+            backsysm(tmp_sym);
             LVal();
 
             exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
@@ -1072,8 +1580,6 @@ void UnaryExp()
                     fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
                 }
             }
-
-            swap(tmp_sym, sym);
         }
     }
     else
@@ -1533,7 +2039,7 @@ void FuncMapInit()
     func_putch.params = putch;
     func_map["putch"] = func_putch;
 
-    fprintf(fp_ir, "declare void @putarray(i32,i32*)\n");
+    fprintf(fp_ir, "declare void @putarray(i32, i32*)\n");
     FuncItem func_putarray;
     vector<int> putarray;
     putarray.push_back(1);
@@ -1541,6 +2047,8 @@ void FuncMapInit()
     func_putarray.type = 0;
     func_putarray.params = putarray;
     func_map["putarray"] = func_putarray;
+
+    fprintf(fp_ir, "declare void @memset(i32*, i32, i32)\n\n");
 }
 
 void FuncCall()
@@ -1585,24 +2093,22 @@ void FuncCall()
 
         if ((*func_it).second.params[i] == 1)
         {
-            fprintf(fp_ir, "i32 ");
+            if (exp_stack.top().type == 1)
+            {
+                fprintf(fp_ir, "i32 %d", exp_stack.top().value);
+            }
+            else if (exp_stack.top().type == 3)
+            {
+                fprintf(fp_ir, "i32 %%x%d", exp_stack.top().value);
+            }
+            else
+            {
+                throw "Error";
+            }
         }
-        else if ((*func_it).second.params[i] == 2)
+        else if ((*func_it).second.params[i] == 2 && exp_stack.top().type == 6)
         {
-            fprintf(fp_ir, "i32* ");
-        }
-        else
-        {
-            throw "Error";
-        }
-
-        if (exp_stack.top().type == 1)
-        {
-            fprintf(fp_ir, "%d", exp_stack.top().value);
-        }
-        else if (exp_stack.top().type == 3)
-        {
-            fprintf(fp_ir, "%%x%d", exp_stack.top().value);
+            fprintf(fp_ir, "i32* %%x%d", exp_stack.top().value);
         }
         else
         {
@@ -1642,9 +2148,13 @@ void toBool()
     {
         fprintf(fp_ir, "%%x%d = icmp ne i32 %d, 0\n", temp_register, num.value);
     }
-    else
+    else if (num.type == 3)
     {
         fprintf(fp_ir, "%%x%d = icmp ne i32 %%x%d, 0\n", temp_register, num.value);
+    }
+    else
+    {
+        throw "Error";
     }
 }
 
