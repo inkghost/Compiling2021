@@ -3,5 +3,6 @@
 image = {source = "dockerfile", path = "."}
 
 run = [
+  "cat $input",
   "./compiler $input $ir",
 ]
