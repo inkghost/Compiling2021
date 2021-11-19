@@ -67,8 +67,6 @@ typedef struct
     char ident[4096];
 } LValReturn;
 
-// 全局变量map
-map<string, VarItem> global_var_map;
 // 变量map
 map<string, VarItem> var_map;
 // 变量迭代器
@@ -1156,77 +1154,105 @@ void Stmt()
     }
     else if (sym.type == 33)
     {
-        Lexical tmp_sym = sym;
-        nextsym();
-        if (sym.type == 9)
+        vector<Lexical> tmp_syms;
+        tmp_syms.push_back(sym);
+        // 是否是赋值语句
+        bool is_assign = false;
+        while (sym.type != 15)
         {
-            ungetc('(', fp_input);
-            sym = tmp_sym;
-            Exp();
-        }
-        // 变量赋值语句
-        else if (sym.type == 17)
-        {
-            sym = tmp_sym;
-
-            this_is_const = false;
-            LVal();
-
-            LValReturn tmp_lval_return = lval_return;
-
-            if (this_is_const || lval_return.var_item->is_array)
-            {
-                throw "Error";
-            }
-
             nextsym();
-            Exp();
+            tmp_syms.push_back(sym);
+            if (sym.type == 17)
+            {
+                is_assign = true;
+                break;
+            }
 
-            exp_stack_tmp = &exp_stack.top();
-            PrintSpace();
-            if (exp_stack_tmp->type == 1)
-            {
-                if (tmp_lval_return.var_item->is_global)
-                {
-                    fprintf(fp_ir, "store i32 %d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
-                }
-                else
-                {
-                    fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
-                }
-                tmp_lval_return.var_item->have_real_value = tmp_lval_return.var_item->nest_layer == nest_layer;
-                tmp_lval_return.var_item->real_value = exp_stack_tmp->value;
-            }
-            else if (exp_stack_tmp->type == 3)
-            {
-                if (tmp_lval_return.var_item->is_global)
-                {
-                    fprintf(fp_ir, "store i32 %%x%d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
-                }
-                else
-                {
-                    fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
-                }
-                tmp_lval_return.var_item->have_real_value = exp_stack_tmp->have_real_value && tmp_lval_return.var_item->nest_layer == nest_layer;
-                tmp_lval_return.var_item->real_value = exp_stack_tmp->real_value;
-            }
-            else
+            if (sym.type == 34)
             {
                 throw "Error";
             }
-
-            exp_stack.pop();
         }
 
-        if (sym.type != 15)
+        for (int i = tmp_syms.size() - 1; i >= 0; i--)
         {
+            backsysm(tmp_syms[i]);
+        }
+        nextsym();
+
+        if (!is_assign)
+        {
+            int older_exp_stack_size = exp_stack.size();
             Exp();
-            exp_stack.pop();
+            if (exp_stack.size() != older_exp_stack_size)
+            {
+                exp_stack.pop();
+            }
 
             if (sym.type != 15)
             {
                 throw "Error";
             }
+            return;
+        }
+
+        this_is_const = false;
+        LVal();
+
+        LValReturn tmp_lval_return = lval_return;
+
+        if (this_is_const || lval_return.var_item->is_array)
+        {
+            throw "Error";
+        }
+
+        nextsym();
+        if (sym.type != 17)
+        {
+            throw "Error";
+        }
+
+        nextsym();
+        Exp();
+
+        exp_stack_tmp = &exp_stack.top();
+        PrintSpace();
+        if (exp_stack_tmp->type == 1)
+        {
+            if (tmp_lval_return.var_item->is_global)
+            {
+                fprintf(fp_ir, "store i32 %d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
+            }
+            else
+            {
+                fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
+            }
+            tmp_lval_return.var_item->have_real_value = tmp_lval_return.var_item->nest_layer == nest_layer;
+            tmp_lval_return.var_item->real_value = exp_stack_tmp->value;
+        }
+        else if (exp_stack_tmp->type == 3)
+        {
+            if (tmp_lval_return.var_item->is_global)
+            {
+                fprintf(fp_ir, "store i32 %%x%d, i32* @%s\n", exp_stack_tmp->value, tmp_lval_return.ident);
+            }
+            else
+            {
+                fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", exp_stack_tmp->value, tmp_lval_return.var_item->register_num);
+            }
+            tmp_lval_return.var_item->have_real_value = exp_stack_tmp->have_real_value && tmp_lval_return.var_item->nest_layer == nest_layer;
+            tmp_lval_return.var_item->real_value = exp_stack_tmp->real_value;
+        }
+        else
+        {
+            throw "Error";
+        }
+
+        exp_stack.pop();
+
+        if (sym.type != 15)
+        {
+            throw "Error";
         }
     }
     else if (sym.type != 15)
@@ -1284,15 +1310,6 @@ void LVal()
         }
     }
 
-    if (!is_declared)
-    {
-        var_it = global_var_map.find((string)sym.ident);
-        if (var_it == global_var_map.end())
-        {
-            throw "Error";
-        }
-    }
-
     if ((*var_it).second.is_const)
     {
         this_is_const = true;
@@ -1302,10 +1319,11 @@ void LVal()
         have_var_in_cal = true;
     }
 
-    lval_return.var_item = &(*var_it).second;
+    lval_return.var_item = &((*var_it).second);
+    LValReturn tmp_lval_return = lval_return;
 
     // 数组变量特殊处理
-    if (lval_return.var_item->is_array)
+    if (tmp_lval_return.var_item->is_array)
     {
         nextsym();
         // 变量使用的数组维度
@@ -1324,12 +1342,12 @@ void LVal()
             if (exp_stack_tmp->type == 1)
             {
                 fprintf(fp_ir, "%%x%d = mul i32 %d, %d\n",
-                        ++temp_register, exp_stack_tmp->value, lval_return.var_item->array_proper.step[dimension_cnt]);
+                        ++temp_register, exp_stack_tmp->value, tmp_lval_return.var_item->array_proper.step[dimension_cnt]);
             }
             else
             {
                 fprintf(fp_ir, "%%x%d = mul i32 %%x%d, %d\n",
-                        ++temp_register, exp_stack_tmp->value, lval_return.var_item->array_proper.step[dimension_cnt]);
+                        ++temp_register, exp_stack_tmp->value, tmp_lval_return.var_item->array_proper.step[dimension_cnt]);
             }
             mul_register = temp_register;
 
@@ -1356,29 +1374,31 @@ void LVal()
 
         PrintSpace();
         // 全局变量
-        if (lval_return.var_item->is_global)
+        if (tmp_lval_return.var_item->is_global)
         {
             fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* @%s, i32 0, i32 %%x%d\n",
-                    ++temp_register, lval_return.var_item->array_proper.size, lval_return.var_item->array_proper.size, lval_return.ident, add_register);
+                    ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.ident, add_register);
         }
         // 局部变量
         else
         {
             fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* %%x%d, i32 0, i32 %%x%d\n",
-                    ++temp_register, lval_return.var_item->array_proper.size, lval_return.var_item->array_proper.size, lval_return.var_item->register_num, add_register);
+                    ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->register_num, add_register);
         }
 
         VarItem *var_item_tmp;
         var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
-        var_item_tmp->is_const = lval_return.var_item->is_const;
+        var_item_tmp->is_const = tmp_lval_return.var_item->is_const;
         var_item_tmp->register_num = temp_register;
         var_item_tmp->have_real_value = false;
         // 该标志用于 load 操作的 @/% 输出判断
         var_item_tmp->is_global = false;
-        var_item_tmp->nest_layer = lval_return.var_item->nest_layer;
-        var_item_tmp->is_array = dimension_cnt != lval_return.var_item->array_proper.dimension.size();
+        var_item_tmp->nest_layer = tmp_lval_return.var_item->nest_layer;
+        var_item_tmp->is_array = dimension_cnt != tmp_lval_return.var_item->array_proper.dimension.size();
 
-        lval_return.var_item = var_item_tmp;
+        tmp_lval_return.var_item = var_item_tmp;
+        lval_return = tmp_lval_return;
+        backsysm(sym);
     }
 }
 
@@ -1580,6 +1600,8 @@ void UnaryExp()
                     fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
                 }
             }
+
+            nextsym();
         }
     }
     else
