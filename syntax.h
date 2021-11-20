@@ -1185,7 +1185,6 @@ void Stmt()
         {
             PrintSpace();
             fprintf(fp_ir, "ret void\n");
-            nextsym();
             return;
         }
 
@@ -1612,8 +1611,16 @@ void LVal()
         // 全局变量
         if (tmp_lval_return.var_item->is_global)
         {
-            fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* @%s, i32 0, i32 %%x%d\n",
-                    ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.ident, add_register);
+            if (add_register == 0)
+            {
+                fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* @%s, i32 0, i32 0\n",
+                        ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.ident);
+            }
+            else
+            {
+                fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* @%s, i32 0, i32 %%x%d\n",
+                        ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.ident, add_register);
+            }
         }
         // 局部变量
         else
@@ -1807,12 +1814,15 @@ void UnaryExp()
         else if (is_in_cond && op.value == 23)
         {
             bool doNotOperation = true;
-            op = exp_stack.top();
-            while (op.value == 23)
+            if (!exp_stack.empty())
             {
-                doNotOperation = !doNotOperation;
-                exp_stack.pop();
                 op = exp_stack.top();
+                while (op.value == 23)
+                {
+                    doNotOperation = !doNotOperation;
+                    exp_stack.pop();
+                    op = exp_stack.top();
+                }
             }
             if (doNotOperation)
             {
