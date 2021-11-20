@@ -1565,9 +1565,9 @@ void LVal()
         // 变量使用的数组维度
         int dimension_cnt = 0;
         // 乘积寄存器
-        int mul_register;
+        int mul_register = 0;
         // 加和寄存器
-        int add_register;
+        int add_register = 0;
         while (sym.type == 11)
         {
             nextsym();

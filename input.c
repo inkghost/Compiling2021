@@ -1,11 +1,56 @@
-int foo(int a, int b) {
-    int t = a + b;
-    a = t - a;
-    b = t - b;
-    return a - b;
+int n;
+int swap(int array[], int i, int j) {
+    int temp;
+    temp     = array[i];
+    array[i] = array[j];
+    array[j] = temp;
+    return 0;
+}
+int heap_ajust(int arr[], int start, int end) {
+    int dad;
+    dad = start;
+    int son;
+    son = dad * 2 + 1;
+    while (son < end + 1) {  //
+        if (son < end && arr[son] < arr[son + 1])
+            son = son + 1;
+        if (arr[dad] > arr[son])
+            return 0;
+        else {
+            dad = swap(arr, dad, son);
+            dad = son;
+            son = dad * 2 + 1;
+        }
+    }
+    return 0;
+}
+int heap_sort(int arr[], int len) {
+    int i;
+    int tmp;
+    i = len / 2 - 1;
+    while (i > -1) {
+        tmp = len - 1;
+        tmp = heap_ajust(arr, i, tmp);
+        i   = i - 1;
+    }
+    i = len - 1;
+    while (i > 0) {
+        int tmp0;
+        tmp0 = 0;
+        tmp  = swap(arr, tmp0, i);
+        tmp  = i - 1;
+        tmp  = heap_ajust(arr, tmp0, tmp);
+        i    = i - 1;
+    }
+    return 0;
 }
 
 int main() {
-    putint(foo(1, 2, 3));
+    int a[10];
+    n = getarray(a);
+    int i;
+    i = 0;
+    i = heap_sort(a, n);
+    putarray(n, a);
     return 0;
 }
