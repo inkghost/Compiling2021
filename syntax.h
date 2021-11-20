@@ -8,20 +8,6 @@ using namespace std;
 
 typedef struct
 {
-    // 1 操作数，2 运算符，3 i32临时寄存器, 4 正负号运算, 5 布尔值, 6 i32*临时寄存器
-    int type;
-    // 操作数的值
-    // 运算符：18 +,19 -,20 *,21 /,22 %, 23 !, 24 <, 25 >, 26 <=, 27 >=, 28 ==, 29 !=, 30 &&, 31 ||
-    // 临时寄存器的次序
-    int value;
-    // 是否有实值
-    bool have_real_value;
-    // 实值
-    int real_value;
-} ExpItem;
-
-typedef struct
-{
     // 维度
     vector<int> dimension;
     // 每个维度的步长
@@ -34,12 +20,30 @@ typedef struct
 
 typedef struct
 {
+    // 1 操作数，2 运算符，3 i32临时寄存器, 4 正负号运算, 5 布尔值, 6 i32*临时寄存器
+    int type;
+    // 操作数的值
+    // 运算符：18 +,19 -,20 *,21 /,22 %, 23 !, 24 <, 25 >, 26 <=, 27 >=, 28 ==, 29 !=, 30 &&, 31 ||
+    // 临时寄存器的次序
+    int value;
+    // 是否有实值
+    bool have_real_value;
+    // 实值
+    int real_value;
+    // 数组属性
+    ArrayProper array_proper;
+} ExpItem;
+
+typedef struct
+{
     // 全局变量
     bool is_global;
     // 是否是常量
     bool is_const;
     // 是否是数组
     bool is_array;
+    // 是否以 i32* 的类型表示
+    bool is_i32_ptr;
     // 临时寄存器的值
     int register_num;
     // 是否有实值
@@ -54,10 +58,17 @@ typedef struct
 
 typedef struct
 {
+    // 函数参数类型 1 i32, 2 i32*
+    int type;
+    ArrayProper array_proper;
+} ParamItem;
+
+typedef struct
+{
     // 函数返回值类型 0 void, 1 int
     int type;
-    // 函数参数列表 0 void, 1 int, 2 int*
-    vector<int> params;
+    // 函数参数列表
+    vector<ParamItem> params;
 } FuncItem;
 
 typedef struct
@@ -92,6 +103,8 @@ list<map<string, VarItem>> var_map_list;
 stack<int> loop_stack;
 // 当前正在声明的数组变量
 VarItem *var_in_def;
+// 当前正在声明的函数变量
+FuncItem *func_in_def;
 
 // 记录运算过程中是否出现变量
 bool have_var_in_cal;
@@ -105,12 +118,16 @@ bool is_in_arr_def;
 int arr_def_nest;
 // 数组定义偏移量
 int arr_def_offset;
+// 记录当前函数是否已经返回
+bool have_return;
 // 记录基础块编号
 int basic_block;
 // 记录是否在全局环境中
 bool is_in_global;
 // 嵌套层数；
 int nest_layer;
+// 记录是否是符合要求的 main 函数
+bool have_main_func;
 
 void CompUnit();
 void Decl();
@@ -124,6 +141,8 @@ void VarDef();
 void InitVal();
 void FuncDef();
 void FuncType();
+void FuncFParams();
+void FuncFParam();
 void Block();
 void BlockItem();
 void Stmt();
@@ -187,11 +206,8 @@ void CompUnit()
         }
         else if (sym.type == 9)
         {
-            is_in_global = false;
             nextsym();
-            fprintf(fp_ir, "define dso_local ");
             FuncDef();
-            fprintf(fp_ir, "\n");
         }
         else
         {
@@ -266,6 +282,16 @@ void ConstDef()
     VarItem *var_item_tmp;
     string ident = sym.ident;
 
+    // 检查是否和函数定义重名
+    if (is_in_global)
+    {
+        func_it = func_map.find(ident);
+        if (func_it != func_map.end())
+        {
+            throw "Error";
+        }
+    }
+
     // 检查变量是否重复声明
     var_it = var_map.find(ident);
     if (var_it != var_map.end())
@@ -281,6 +307,7 @@ void ConstDef()
     var_item_tmp->is_global = is_in_global;
     var_item_tmp->nest_layer = nest_layer;
     var_item_tmp->is_array = false;
+    var_item_tmp->is_i32_ptr = false;
     var_item_tmp->array_proper.dimension.clear();
     var_item_tmp->array_proper.step.clear();
 
@@ -574,6 +601,16 @@ void VarDef()
     VarItem *var_item_tmp;
     string ident = sym.ident;
 
+    // 检查是否和函数定义重名
+    if (is_in_global)
+    {
+        func_it = func_map.find(ident);
+        if (func_it != func_map.end())
+        {
+            throw "Error";
+        }
+    }
+
     // 检查变量是否重复声明
     var_it = var_map.find(ident);
     if (var_it != var_map.end())
@@ -589,6 +626,7 @@ void VarDef()
     var_item_tmp->is_global = is_in_global;
     var_item_tmp->nest_layer = nest_layer;
     var_item_tmp->is_array = false;
+    var_item_tmp->is_i32_ptr = false;
     var_item_tmp->array_proper.dimension.clear();
     var_item_tmp->array_proper.step.clear();
 
@@ -876,6 +914,15 @@ void InitVal()
 
 void FuncDef()
 {
+    temp_register = 0;
+    var_map_list.push_back(var_map);
+    var_map.clear();
+
+    FuncItem *func_item_tmp;
+    func_item_tmp = (FuncItem *)malloc(sizeof(FuncItem));
+    memset(func_item_tmp, 0, sizeof(FuncItem));
+    func_in_def = func_item_tmp;
+
     FuncType();
 
     nextsym();
@@ -884,6 +931,14 @@ void FuncDef()
         fprintf(fp_ir, "@%s", sym.ident);
     }
     else
+    {
+        throw "Error";
+    }
+
+    string ident = sym.ident;
+    // 检查函数命名是否冲突
+    var_it = var_map_list.front().find(ident);
+    if (var_it != var_map_list.front().end())
     {
         throw "Error";
     }
@@ -899,6 +954,11 @@ void FuncDef()
     }
 
     nextsym();
+    if (sym.type != 10)
+    {
+        FuncFParams();
+    }
+
     if (sym.type == 10)
     {
         fprintf(fp_ir, ")");
@@ -908,24 +968,168 @@ void FuncDef()
         throw "Error";
     }
 
+    if (strcmp("main", ident.c_str()) == 0)
+    {
+        if (func_in_def->type != 1 || func_in_def->params.size() != 0)
+        {
+            throw "Error";
+        }
+        have_main_func = true;
+    }
+
     fprintf(fp_ir, "{\n");
 
-    nextsym();
-    Block();
+    // 迭代器遍历当前 var_map （即函数参量）
+    for (var_it = var_map.begin(); var_it != var_map.end(); var_it++)
+    {
+        if (!var_it->second.is_i32_ptr)
+        {
+            PrintSpace();
+            fprintf(fp_ir, "%%x%d = alloca i32\n", ++temp_register);
+            PrintSpace();
+            fprintf(fp_ir, "store i32 %%x%d, i32* %%x%d\n", var_it->second.register_num, temp_register);
+            var_it->second.register_num = temp_register;
+        }
+    }
 
-    fprintf(fp_ir, "}");
+    func_map[ident] = *func_in_def;
+
+    nextsym();
+    is_in_global = false;
+    have_return = false;
+    Block();
+    is_in_global = true;
+
+    if (!have_return)
+    {
+        if (func_in_def->type == 0)
+        {
+            PrintSpace();
+            fprintf(fp_ir, "ret void\n");
+        }
+        else
+        {
+            throw "Error";
+        }
+    }
+
+    fprintf(fp_ir, "}\n");
+
+    var_map = var_map_list.back();
+    var_map_list.pop_back();
 }
 
 void FuncType()
 {
     if (sym.type == 1)
     {
-        fprintf(fp_ir, "i32 ");
+        fprintf(fp_ir, "\ndefine dso_local i32 ");
+        func_in_def->type = 1;
+    }
+    else if (sym.type == 2)
+    {
+        fprintf(fp_ir, "\ndefine dso_local void ");
+        func_in_def->type = 0;
     }
     else
     {
         throw "Error";
     }
+}
+
+void FuncFParams()
+{
+    do
+    {
+        FuncFParam();
+    } while (sym.type == 16);
+}
+
+void FuncFParam()
+{
+    if (func_in_def->params.size() != 0)
+    {
+        nextsym();
+        fprintf(fp_ir, ", ");
+    }
+
+    ParamItem param_item_tmp;
+    memset(&param_item_tmp, 0, sizeof(ParamItem));
+
+    BType();
+
+    nextsym();
+    if (sym.type != 33)
+    {
+        throw "Error";
+    }
+
+    VarItem *var_item_tmp;
+    string ident = sym.ident;
+
+    var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
+    memset(var_item_tmp, 0, sizeof(VarItem));
+    var_item_tmp->is_const = false;
+    var_item_tmp->register_num = ++temp_register;
+    var_item_tmp->have_real_value = false;
+    var_item_tmp->is_global = false;
+    var_item_tmp->nest_layer = nest_layer;
+    var_item_tmp->is_array = false;
+    var_item_tmp->is_i32_ptr = false;
+    var_item_tmp->array_proper.dimension.clear();
+    var_item_tmp->array_proper.step.clear();
+
+    nextsym();
+    if (sym.type == 11)
+    {
+        param_item_tmp.type = 2;
+        param_item_tmp.array_proper.dimension.push_back(1);
+        param_item_tmp.array_proper.step.push_back(1);
+        var_item_tmp->is_array = true;
+        var_item_tmp->is_i32_ptr = true;
+        nextsym();
+        if (sym.type != 12)
+        {
+            throw "Error";
+        }
+
+        nextsym();
+        while (sym.type == 11)
+        {
+            have_var_in_cal = false;
+            nextsym();
+            Exp();
+            exp_stack_tmp = &exp_stack.top();
+            if (have_var_in_cal || exp_stack_tmp->type != 1 || exp_stack_tmp->value <= 0)
+            {
+                throw "Error";
+            }
+            param_item_tmp.array_proper.dimension.push_back(exp_stack_tmp->value);
+            for (int i = 0; i < param_item_tmp.array_proper.step.size(); i++)
+            {
+                param_item_tmp.array_proper.step[i] *= exp_stack_tmp->value;
+            }
+            param_item_tmp.array_proper.step.push_back(1);
+            exp_stack.pop();
+        }
+
+        if (sym.type != 12)
+        {
+            throw "Error";
+        }
+        nextsym();
+
+        var_item_tmp->array_proper = param_item_tmp.array_proper;
+        fprintf(fp_ir, "i32* %%x%d", var_item_tmp->register_num);
+    }
+    else
+    {
+        param_item_tmp.type = 1;
+        fprintf(fp_ir, "i32 %%x%d", var_item_tmp->register_num);
+    }
+
+    func_in_def->params.push_back(param_item_tmp);
+    var_map[ident] = *var_item_tmp;
 }
 
 void Block()
@@ -968,9 +1172,25 @@ void Stmt()
     // return 语句
     if (sym.type == 8)
     {
+        have_return = true;
         nextsym();
-        Exp();
 
+        // void 类型
+        if (sym.type == 15)
+        {
+            PrintSpace();
+            fprintf(fp_ir, "ret void\n");
+            nextsym();
+            return;
+        }
+
+        if (func_in_def->type == 0)
+        {
+            throw "Error";
+        }
+
+        // int 类型
+        Exp();
         exp_stack_tmp = &exp_stack.top();
         PrintSpace();
         if (exp_stack_tmp->type == 1)
@@ -1391,8 +1611,34 @@ void LVal()
         // 局部变量
         else
         {
-            fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* %%x%d, i32 0, i32 %%x%d\n",
-                    ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->register_num, add_register);
+            // 以 i32* 表示
+            if (tmp_lval_return.var_item->is_i32_ptr)
+            {
+                if (add_register == 0)
+                {
+                    fprintf(fp_ir, "%%x%d = getelementptr i32, i32* %%x%d, i32 0\n",
+                            ++temp_register, tmp_lval_return.var_item->register_num);
+                }
+                else
+                {
+                    fprintf(fp_ir, "%%x%d = getelementptr i32, i32* %%x%d, i32 %%x%d\n",
+                            ++temp_register, tmp_lval_return.var_item->register_num, add_register);
+                }
+            }
+            // 以 [n x i32]* 表示
+            else
+            {
+                if (add_register == 0)
+                {
+                    fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* %%x%d, i32 0, i32 0\n",
+                            ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->register_num);
+                }
+                else
+                {
+                    fprintf(fp_ir, "%%x%d = getelementptr [%d x i32],[%d x i32]* %%x%d, i32 0, i32 %%x%d\n",
+                            ++temp_register, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->array_proper.size, tmp_lval_return.var_item->register_num, add_register);
+                }
+            }
         }
 
         VarItem *var_item_tmp;
@@ -1404,7 +1650,19 @@ void LVal()
         // 该标志用于 load 操作的 @/% 输出判断
         var_item_tmp->is_global = false;
         var_item_tmp->nest_layer = tmp_lval_return.var_item->nest_layer;
-        var_item_tmp->is_array = dimension_cnt != tmp_lval_return.var_item->array_proper.dimension.size();
+        var_item_tmp->is_array = false;
+        var_item_tmp->is_i32_ptr = false;
+        if (dimension_cnt != tmp_lval_return.var_item->array_proper.dimension.size())
+        {
+            var_item_tmp->is_array = true;
+            var_item_tmp->is_i32_ptr = true;
+            for (int i = dimension_cnt; i < tmp_lval_return.var_item->array_proper.dimension.size(); i++)
+            {
+                var_item_tmp->array_proper.dimension.push_back(tmp_lval_return.var_item->array_proper.dimension[i]);
+                var_item_tmp->array_proper.step.push_back(tmp_lval_return.var_item->array_proper.step[i]);
+            }
+            var_item_tmp->array_proper.size = var_item_tmp->array_proper.dimension[0] * var_item_tmp->array_proper.step[0];
+        }
 
         tmp_lval_return.var_item = var_item_tmp;
         lval_return = tmp_lval_return;
@@ -1460,6 +1718,7 @@ void PrimaryExp()
             exp_stack_tmp->type = 6;
             exp_stack_tmp->value = lval_return.var_item->register_num;
             exp_stack_tmp->have_real_value = false;
+            exp_stack_tmp->array_proper = lval_return.var_item->array_proper;
             exp_stack.push(*exp_stack_tmp);
             free(exp_stack_tmp);
         }
@@ -1470,7 +1729,6 @@ void PrimaryExp()
             exp_stack_tmp->have_real_value = false;
             exp_stack_tmp->real_value = lval_return.var_item->real_value;
             exp_stack.push(*exp_stack_tmp);
-            free(exp_stack_tmp);
 
             PrintSpace();
             if (lval_return.var_item->is_global)
@@ -1481,6 +1739,7 @@ void PrimaryExp()
             {
                 fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
             }
+            free(exp_stack_tmp);
         }
         nextsym();
     }
@@ -1582,42 +1841,12 @@ void UnaryExp()
 
             nextsym();
         }
+        // PrimaryExp
         else
         {
+            backsysm(sym);
             swap(tmp_sym, sym);
-            backsysm(tmp_sym);
-            LVal();
-
-            exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-            memset(exp_stack_tmp, 0, sizeof(ExpItem));
-            if (lval_return.var_item->have_real_value && lval_return.var_item->nest_layer == nest_layer)
-            {
-                exp_stack_tmp->type = 1;
-                exp_stack_tmp->value = lval_return.var_item->real_value;
-                exp_stack_tmp->have_real_value = true;
-                exp_stack_tmp->real_value = lval_return.var_item->real_value;
-                exp_stack.push(*exp_stack_tmp);
-            }
-            else
-            {
-                exp_stack_tmp->type = 3;
-                exp_stack_tmp->value = ++temp_register;
-                exp_stack_tmp->have_real_value = false;
-                exp_stack_tmp->real_value = lval_return.var_item->real_value;
-                exp_stack.push(*exp_stack_tmp);
-
-                PrintSpace();
-                if (lval_return.var_item->is_global)
-                {
-                    fprintf(fp_ir, "%%x%d = load i32, i32* @%s\n", exp_stack_tmp->value, lval_return.ident);
-                }
-                else
-                {
-                    fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
-                }
-            }
-            free(exp_stack_tmp);
-            nextsym();
+            PrimaryExp();
         }
     }
     else
@@ -1646,11 +1875,23 @@ void UnaryOp()
 
 void FuncRParams(int params_count)
 {
+    stack<ExpItem> tmp_exp_stack;
     do
     {
+        nextsym();
         Exp();
+        tmp_exp_stack.push(exp_stack.top());
+        exp_stack.pop();
         params_count--;
     } while (sym.type == 16);
+
+    // 倒序入栈
+    while (!tmp_exp_stack.empty())
+    {
+        exp_stack.push(tmp_exp_stack.top());
+        tmp_exp_stack.pop();
+    }
+
     if (params_count != 0)
     {
         throw "Error";
@@ -2061,76 +2302,79 @@ void PrintSpace()
 
 void FuncMapInit()
 {
+    ParamItem param_item_tmp;
+
     fprintf(fp_ir, "declare i32 @getint()\n");
     FuncItem func_getint;
-    vector<int> getint;
     func_getint.type = 1;
-    func_getint.params = getint;
     func_map["getint"] = func_getint;
 
     fprintf(fp_ir, "declare i32 @getch()\n");
     FuncItem func_getch;
-    vector<int> getch;
     func_getch.type = 1;
-    func_getch.params = getch;
     func_map["getch"] = func_getch;
 
     fprintf(fp_ir, "declare i32 @getarray(i32*)\n");
     FuncItem func_getarray;
-    vector<int> getarray;
-    getarray.push_back(2);
     func_getarray.type = 1;
-    func_getarray.params = getarray;
+    memset(&param_item_tmp, 0, sizeof(ParamItem));
+    param_item_tmp.type = 2;
+    param_item_tmp.array_proper.step.push_back(1);
+    func_getarray.params.push_back(param_item_tmp);
     func_map["getarray"] = func_getarray;
 
     fprintf(fp_ir, "declare void @putint(i32)\n");
     FuncItem func_putint;
-    vector<int> putint;
-    putint.push_back(1);
     func_putint.type = 0;
-    func_putint.params = putint;
+    memset(&param_item_tmp, 0, sizeof(ParamItem));
+    param_item_tmp.type = 1;
+    func_putint.params.push_back(param_item_tmp);
     func_map["putint"] = func_putint;
 
     fprintf(fp_ir, "declare void @putch(i32)\n");
     FuncItem func_putch;
-    vector<int> putch;
-    putch.push_back(1);
     func_putch.type = 0;
-    func_putch.params = putch;
+    memset(&param_item_tmp, 0, sizeof(ParamItem));
+    param_item_tmp.type = 1;
+    func_putch.params.push_back(param_item_tmp);
     func_map["putch"] = func_putch;
 
     fprintf(fp_ir, "declare void @putarray(i32, i32*)\n");
     FuncItem func_putarray;
-    vector<int> putarray;
-    putarray.push_back(1);
-    putarray.push_back(2);
     func_putarray.type = 0;
-    func_putarray.params = putarray;
+    memset(&param_item_tmp, 0, sizeof(ParamItem));
+    param_item_tmp.type = 1;
+    func_putarray.params.push_back(param_item_tmp);
+    memset(&param_item_tmp, 0, sizeof(ParamItem));
+    param_item_tmp.type = 2;
+    param_item_tmp.array_proper.step.push_back(1);
+    func_putarray.params.push_back(param_item_tmp);
     func_map["putarray"] = func_putarray;
 
-    fprintf(fp_ir, "declare void @memset(i32*, i32, i32)\n\n");
+    fprintf(fp_ir, "declare void @memset(i32*, i32, i32)\n");
 }
 
 void FuncCall()
 {
     // 检查函数是否被声明
-    func_it = func_map.find((string)sym.ident);
-    if (func_it == func_map.end())
+    map<string, FuncItem>::iterator func_it_tmp = func_map.find((string)sym.ident);
+    if (func_it_tmp == func_map.end())
     {
         throw "Error";
     }
 
-    int params_count = (*func_it).second.params.size();
+    int params_count = (*func_it_tmp).second.params.size();
     nextsym();
     if (params_count > 0)
     {
+        backsysm(sym);
         FuncRParams(params_count);
     }
 
-    if ((*func_it).second.type == 0)
+    if ((*func_it_tmp).second.type == 0)
     {
         PrintSpace();
-        fprintf(fp_ir, "call void @%s", (*func_it).first.c_str());
+        fprintf(fp_ir, "call void @%s", (*func_it_tmp).first.c_str());
     }
     else
     {
@@ -2140,7 +2384,7 @@ void FuncCall()
         exp_stack_tmp->value = ++temp_register;
         exp_stack_tmp->have_real_value = false;
         PrintSpace();
-        fprintf(fp_ir, "%%x%d = call i32 @%s", exp_stack_tmp->value, (*func_it).first.c_str());
+        fprintf(fp_ir, "%%x%d = call i32 @%s", exp_stack_tmp->value, (*func_it_tmp).first.c_str());
     }
 
     fprintf(fp_ir, "(");
@@ -2152,7 +2396,8 @@ void FuncCall()
             fprintf(fp_ir, ", ");
         }
 
-        if ((*func_it).second.params[i] == 1)
+        // i32 参数
+        if ((*func_it_tmp).second.params[i].type == 1)
         {
             if (exp_stack.top().type == 1)
             {
@@ -2167,8 +2412,23 @@ void FuncCall()
                 throw "Error";
             }
         }
-        else if ((*func_it).second.params[i] == 2 && exp_stack.top().type == 6)
+        // i32* 参数
+        else if (exp_stack.top().type == 6)
         {
+            if ((*func_it_tmp).second.params[i].array_proper.step.size() != exp_stack.top().array_proper.step.size())
+            {
+                throw "Error";
+            }
+
+            for (int j = 0; j < exp_stack.top().array_proper.step.size(); j++)
+            {
+                // 检查各维度步长是否相同
+                if ((*func_it_tmp).second.params[i].array_proper.step[j] != exp_stack.top().array_proper.step[j])
+                {
+                    throw "Error";
+                }
+            }
+
             fprintf(fp_ir, "i32* %%x%d", exp_stack.top().value);
         }
         else
@@ -2179,7 +2439,7 @@ void FuncCall()
         exp_stack.pop();
     }
 
-    if ((*func_it).second.type == 1)
+    if ((*func_it_tmp).second.type == 1)
     {
         exp_stack.push(*exp_stack_tmp);
         free(exp_stack_tmp);
