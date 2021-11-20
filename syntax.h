@@ -1009,7 +1009,8 @@ void FuncDef()
         }
         else
         {
-            throw "Error";
+            PrintSpace();
+            fprintf(fp_ir, "ret i32 0\n");
         }
     }
 
@@ -1087,37 +1088,41 @@ void FuncFParam()
         param_item_tmp.array_proper.step.push_back(1);
         var_item_tmp->is_array = true;
         var_item_tmp->is_i32_ptr = true;
+
         nextsym();
         if (sym.type != 12)
         {
             throw "Error";
         }
-
         nextsym();
-        while (sym.type == 11)
+
+        if (sym.type == 11)
         {
-            have_var_in_cal = false;
-            nextsym();
-            Exp();
-            exp_stack_tmp = &exp_stack.top();
-            if (have_var_in_cal || exp_stack_tmp->type != 1 || exp_stack_tmp->value <= 0)
+            while (sym.type == 11)
+            {
+                have_var_in_cal = false;
+                nextsym();
+                Exp();
+                exp_stack_tmp = &exp_stack.top();
+                if (have_var_in_cal || exp_stack_tmp->type != 1 || exp_stack_tmp->value <= 0)
+                {
+                    throw "Error";
+                }
+                param_item_tmp.array_proper.dimension.push_back(exp_stack_tmp->value);
+                for (int i = 0; i < param_item_tmp.array_proper.step.size(); i++)
+                {
+                    param_item_tmp.array_proper.step[i] *= exp_stack_tmp->value;
+                }
+                param_item_tmp.array_proper.step.push_back(1);
+                exp_stack.pop();
+            }
+
+            if (sym.type != 12)
             {
                 throw "Error";
             }
-            param_item_tmp.array_proper.dimension.push_back(exp_stack_tmp->value);
-            for (int i = 0; i < param_item_tmp.array_proper.step.size(); i++)
-            {
-                param_item_tmp.array_proper.step[i] *= exp_stack_tmp->value;
-            }
-            param_item_tmp.array_proper.step.push_back(1);
-            exp_stack.pop();
+            nextsym();
         }
-
-        if (sym.type != 12)
-        {
-            throw "Error";
-        }
-        nextsym();
 
         var_item_tmp->array_proper = param_item_tmp.array_proper;
         fprintf(fp_ir, "i32* %%x%d", var_item_tmp->register_num);
@@ -1288,6 +1293,7 @@ void Stmt()
 
         // out block
         fprintf(fp_ir, "basic_block_%d:\n", out_block);
+        have_return = false;
     }
     // 循环语句
     else if (sym.type == 5)
@@ -1343,6 +1349,7 @@ void Stmt()
         fprintf(fp_ir, "br label %%basic_block_%d\n", cond_block);
         // out block
         fprintf(fp_ir, "basic_block_%d:\n", out_block);
+        have_return = false;
     }
     // break 语句
     else if (sym.type == 6)
