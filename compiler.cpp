@@ -14,7 +14,8 @@ int main(int argc, char **argv)
 
     // 设置输入输出文件
     fp_input = fopen(argv[1], "r");
-    fp_ir = fopen(argv[2], "w");
+    // fp_ir = fopen(argv[2], "w");
+    fp_ir = stdout;
 
     try
     {

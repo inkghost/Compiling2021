@@ -27,7 +27,7 @@ typedef struct
     // 每个维度的步长
     vector<int> step;
     // 数组的值
-    vector<int> value;
+    map<int, int> value;
     // 数组大小
     int size;
 } ArrayProper;
@@ -75,6 +75,8 @@ map<string, VarItem>::iterator var_it;
 map<string, FuncItem> func_map;
 // 函数迭代器
 map<string, FuncItem>::iterator func_it;
+// 数组值迭代器
+map<int, int>::iterator arr_value_it;
 
 int temp_register = 0;
 
@@ -272,12 +274,15 @@ void ConstDef()
     }
 
     var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
+    memset(var_item_tmp, 0, sizeof(VarItem));
     var_item_tmp->is_const = true;
     var_item_tmp->register_num = ++temp_register;
     var_item_tmp->have_real_value = true;
     var_item_tmp->is_global = is_in_global;
     var_item_tmp->nest_layer = nest_layer;
     var_item_tmp->is_array = false;
+    var_item_tmp->array_proper.dimension.clear();
+    var_item_tmp->array_proper.step.clear();
 
     // 判断是否是数组
     nextsym();
@@ -311,6 +316,7 @@ void ConstDef()
             {
                 throw "Error";
             }
+            exp_stack.pop();
             nextsym();
         }
         // 维度计算过程中必须为常量表达式
@@ -319,14 +325,11 @@ void ConstDef()
             throw "Error";
         }
         // 数组存值初始化
-        for (int i = 0; i < var_item_tmp->array_proper.size; i++)
-        {
-            var_item_tmp->array_proper.value.push_back(0);
-        }
+        var_item_tmp->array_proper.value.clear();
     }
     backsysm(sym);
 
-    var_map[sym.ident] = *var_item_tmp;
+    var_map[ident] = *var_item_tmp;
 
     // 数组定义处理
     if (is_in_arr_def)
@@ -349,15 +352,7 @@ void ConstDef()
             throw "Error";
         }
 
-        bool have_nonzero = false;
-        for (int i = 0; i < var_in_def->array_proper.size; i++)
-        {
-            if (var_in_def->array_proper.value[i] != 0)
-            {
-                have_nonzero = true;
-                break;
-            }
-        }
+        bool have_nonzero = !(var_in_def->array_proper.value.empty());
 
         // 全局数组
         if (is_in_global)
@@ -369,15 +364,23 @@ void ConstDef()
             }
             else
             {
-                for (int i = 0; i < var_in_def->array_proper.value.size(); i++)
+                for (int i = 0; i < var_in_def->array_proper.size; i++)
                 {
+                    arr_value_it = var_in_def->array_proper.value.find(i);
+
+                    int value_in_pos = 0;
+                    if (arr_value_it != var_in_def->array_proper.value.end())
+                    {
+                        value_in_pos = arr_value_it->second;
+                    }
+
                     if (i == 0)
                     {
-                        fprintf(fp_ir, "[i32 %d", var_in_def->array_proper.value[i]);
+                        fprintf(fp_ir, "[i32 %d", value_in_pos);
                     }
                     else
                     {
-                        fprintf(fp_ir, ", i32 %d", var_in_def->array_proper.value[i]);
+                        fprintf(fp_ir, ", i32 %d", value_in_pos);
                     }
                 }
                 fprintf(fp_ir, "]\n");
@@ -397,13 +400,15 @@ void ConstDef()
             {
                 for (int i = 0; i < var_in_def->array_proper.size; i++)
                 {
-                    if (var_in_def->array_proper.value[i] != 0)
+                    arr_value_it = var_in_def->array_proper.value.find(i);
+
+                    if (arr_value_it != var_in_def->array_proper.value.end())
                     {
                         PrintSpace();
                         fprintf(fp_ir, "%%x%d = getelementptr [%d x i32], [%d x i32]* %%x%d, i32 0, i32 %d\n",
                                 ++temp_register, var_in_def->array_proper.size, var_in_def->array_proper.size, var_in_def->register_num, i);
                         PrintSpace();
-                        fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", var_in_def->array_proper.value[i], temp_register);
+                        fprintf(fp_ir, "store i32 %d, i32* %%x%d\n", arr_value_it->second, temp_register);
                     }
                 }
             }
@@ -473,6 +478,7 @@ void ConstDef()
 
         exp_stack.pop();
     }
+    free(var_item_tmp);
 }
 
 void ConstInitVal()
@@ -576,12 +582,15 @@ void VarDef()
     }
 
     var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
+    memset(var_item_tmp, 0, sizeof(VarItem));
     var_item_tmp->is_const = false;
     var_item_tmp->register_num = ++temp_register;
     var_item_tmp->have_real_value = false;
     var_item_tmp->is_global = is_in_global;
     var_item_tmp->nest_layer = nest_layer;
     var_item_tmp->is_array = false;
+    var_item_tmp->array_proper.dimension.clear();
+    var_item_tmp->array_proper.step.clear();
 
     // 判断是否是数组
     nextsym();
@@ -615,6 +624,7 @@ void VarDef()
             {
                 throw "Error";
             }
+            exp_stack.pop();
             nextsym();
         }
         // 维度计算过程中必须为常量表达式
@@ -623,14 +633,11 @@ void VarDef()
             throw "Error";
         }
         // 数组存值初始化
-        for (int i = 0; i < var_item_tmp->array_proper.size; i++)
-        {
-            var_item_tmp->array_proper.value.push_back(0);
-        }
+        var_item_tmp->array_proper.value.clear();
     }
     backsysm(sym);
 
-    var_map[sym.ident] = *var_item_tmp;
+    var_map[ident] = *var_item_tmp;
 
     // 数组定义处理
     if (is_in_arr_def)
@@ -667,15 +674,7 @@ void VarDef()
         // 全局数组
         if (is_in_global)
         {
-            bool have_nonzero = false;
-            for (int i = 0; i < var_in_def->array_proper.size; i++)
-            {
-                if (var_in_def->array_proper.value[i] != 0)
-                {
-                    have_nonzero = true;
-                    break;
-                }
-            }
+            bool have_nonzero = !(var_in_def->array_proper.value.empty());
             fprintf(fp_ir, "@%s = dso_local global [%d x i32] ", ident.c_str(), var_in_def->array_proper.size);
             if (!have_nonzero)
             {
@@ -683,15 +682,23 @@ void VarDef()
             }
             else
             {
-                for (int i = 0; i < var_in_def->array_proper.value.size(); i++)
+                for (int i = 0; i < var_in_def->array_proper.size; i++)
                 {
+                    arr_value_it = var_in_def->array_proper.value.find(i);
+
+                    int value_in_pos = 0;
+                    if (arr_value_it != var_in_def->array_proper.value.end())
+                    {
+                        value_in_pos = arr_value_it->second;
+                    }
+
                     if (i == 0)
                     {
-                        fprintf(fp_ir, "[i32 %d", var_in_def->array_proper.value[i]);
+                        fprintf(fp_ir, "[i32 %d", value_in_pos);
                     }
                     else
                     {
-                        fprintf(fp_ir, ", i32 %d", var_in_def->array_proper.value[i]);
+                        fprintf(fp_ir, ", i32 %d", value_in_pos);
                     }
                 }
                 fprintf(fp_ir, "]\n");
@@ -773,6 +780,8 @@ void VarDef()
 
         exp_stack.pop();
     }
+
+    free(var_item_tmp);
 }
 
 void InitVal()
@@ -1388,6 +1397,7 @@ void LVal()
 
         VarItem *var_item_tmp;
         var_item_tmp = (VarItem *)malloc(sizeof(VarItem));
+        memset(var_item_tmp, 0, sizeof(VarItem));
         var_item_tmp->is_const = tmp_lval_return.var_item->is_const;
         var_item_tmp->register_num = temp_register;
         var_item_tmp->have_real_value = false;
@@ -1420,11 +1430,13 @@ void PrimaryExp()
     else if (sym.type == 32)
     {
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 1;
         exp_stack_tmp->value = sym.value;
         exp_stack_tmp->have_real_value = true;
         exp_stack_tmp->real_value = sym.value;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
         nextsym();
     }
     else if (sym.type == 33)
@@ -1432,6 +1444,7 @@ void PrimaryExp()
         LVal();
 
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         if (lval_return.var_item->have_real_value && lval_return.var_item->nest_layer == nest_layer)
         {
             exp_stack_tmp->type = 1;
@@ -1439,6 +1452,7 @@ void PrimaryExp()
             exp_stack_tmp->have_real_value = true;
             exp_stack_tmp->real_value = lval_return.var_item->real_value;
             exp_stack.push(*exp_stack_tmp);
+            free(exp_stack_tmp);
         }
         // 数组地址
         else if (lval_return.var_item->is_array)
@@ -1447,6 +1461,7 @@ void PrimaryExp()
             exp_stack_tmp->value = lval_return.var_item->register_num;
             exp_stack_tmp->have_real_value = false;
             exp_stack.push(*exp_stack_tmp);
+            free(exp_stack_tmp);
         }
         else
         {
@@ -1455,6 +1470,7 @@ void PrimaryExp()
             exp_stack_tmp->have_real_value = false;
             exp_stack_tmp->real_value = lval_return.var_item->real_value;
             exp_stack.push(*exp_stack_tmp);
+            free(exp_stack_tmp);
 
             PrintSpace();
             if (lval_return.var_item->is_global)
@@ -1466,7 +1482,6 @@ void PrimaryExp()
                 fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
             }
         }
-
         nextsym();
     }
     else
@@ -1574,6 +1589,7 @@ void UnaryExp()
             LVal();
 
             exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+            memset(exp_stack_tmp, 0, sizeof(ExpItem));
             if (lval_return.var_item->have_real_value && lval_return.var_item->nest_layer == nest_layer)
             {
                 exp_stack_tmp->type = 1;
@@ -1600,7 +1616,7 @@ void UnaryExp()
                     fprintf(fp_ir, "%%x%d = load i32, i32* %%x%d\n", exp_stack_tmp->value, lval_return.var_item->register_num);
                 }
             }
-
+            free(exp_stack_tmp);
             nextsym();
         }
     }
@@ -1615,10 +1631,12 @@ void UnaryOp()
     if (sym.type == 18 || sym.type == 19 || (is_in_cond && sym.type == 23))
     {
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 4;
         exp_stack_tmp->value = sym.type;
         exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
     }
     else
     {
@@ -1649,10 +1667,12 @@ void MulExp()
             break;
         }
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
         nextsym();
         UnaryExp();
 
@@ -1671,10 +1691,12 @@ void AddExp()
             break;
         }
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
         nextsym();
         MulExp();
 
@@ -1692,10 +1714,12 @@ void RelExp()
             break;
         }
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
         nextsym();
         AddExp();
 
@@ -1714,10 +1738,12 @@ void EqExp()
             break;
         }
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
         nextsym();
         RelExp();
         toInt();
@@ -1737,10 +1763,12 @@ void LAndExp()
             break;
         }
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
         nextsym();
         EqExp();
         toBool();
@@ -1759,10 +1787,12 @@ void LOrExp()
             break;
         }
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 2;
         exp_stack_tmp->value = sym.type;
         exp_stack_tmp->have_real_value = false;
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
         nextsym();
         LAndExp();
 
@@ -1797,6 +1827,7 @@ void Operation()
     exp_stack.pop();
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+    memset(exp_stack_tmp, 0, sizeof(ExpItem));
 
     if (num1.have_real_value && num2.have_real_value)
     {
@@ -1874,6 +1905,7 @@ void Operation()
             fprintf(fp_ir, "%%x%d\n", num2.value);
         }
     }
+    free(exp_stack_tmp);
 }
 
 void NotOperation(ExpItem num)
@@ -1883,10 +1915,12 @@ void NotOperation(ExpItem num)
     fprintf(fp_ir, "%%x%d = icmp eq i32 %%x%d, 0\n", ++temp_register, num.value);
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+    memset(exp_stack_tmp, 0, sizeof(ExpItem));
     exp_stack_tmp->type = 3;
     exp_stack_tmp->value = ++temp_register;
     exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
+    free(exp_stack_tmp);
 
     // 将非运算的结果转化为 i32
     PrintSpace();
@@ -1920,6 +1954,7 @@ void CmpOperation()
     exp_stack.pop();
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+    memset(exp_stack_tmp, 0, sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
     exp_stack_tmp->have_real_value = false;
@@ -1927,6 +1962,7 @@ void CmpOperation()
 
     PrintSpace();
     fprintf(fp_ir, "%%x%d = icmp ", exp_stack_tmp->value);
+    free(exp_stack_tmp);
     switch (op.value)
     {
     case 24:
@@ -1996,10 +2032,12 @@ void BitOperation()
     exp_stack.pop();
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+    memset(exp_stack_tmp, 0, sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
     exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
+    free(exp_stack_tmp);
 
     PrintSpace();
     if (op.value == 30)
@@ -2097,6 +2135,7 @@ void FuncCall()
     else
     {
         exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+        memset(exp_stack_tmp, 0, sizeof(ExpItem));
         exp_stack_tmp->type = 3;
         exp_stack_tmp->value = ++temp_register;
         exp_stack_tmp->have_real_value = false;
@@ -2143,6 +2182,7 @@ void FuncCall()
     if ((*func_it).second.type == 1)
     {
         exp_stack.push(*exp_stack_tmp);
+        free(exp_stack_tmp);
     }
 
     fprintf(fp_ir, ")\n");
@@ -2160,10 +2200,12 @@ void toBool()
     exp_stack.pop();
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+    memset(exp_stack_tmp, 0, sizeof(ExpItem));
     exp_stack_tmp->type = 5;
     exp_stack_tmp->value = ++temp_register;
     exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
+    free(exp_stack_tmp);
 
     PrintSpace();
     if (num.type == 1)
@@ -2192,10 +2234,12 @@ void toInt()
     exp_stack.pop();
 
     exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
+    memset(exp_stack_tmp, 0, sizeof(ExpItem));
     exp_stack_tmp->type = 3;
     exp_stack_tmp->value = ++temp_register;
     exp_stack_tmp->have_real_value = false;
     exp_stack.push(*exp_stack_tmp);
+    free(exp_stack_tmp);
 
     PrintSpace();
     fprintf(fp_ir, "%%x%d = zext i1 %%x%d to i32\n", temp_register, num.value);
