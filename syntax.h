@@ -101,6 +101,12 @@ stack<ExpItem> exp_stack;
 list<map<string, VarItem>> var_map_list;
 // 记录循环语句嵌套栈
 stack<int> loop_stack;
+// 选择语句块嵌套栈
+stack<int> cond_block_stack;
+// 执行语句块嵌套栈
+stack<int> exec_block_stack;
+// 退出语句块嵌套栈
+stack<int> out_block_stack;
 // 当前正在声明的数组变量
 VarItem *var_in_def;
 // 当前正在声明的函数变量
@@ -166,8 +172,6 @@ void Operation();
 void NotOperation(ExpItem);
 // 比较运算
 void CmpOperation();
-// 位运算
-void BitOperation();
 // 打印嵌套空格
 void PrintSpace();
 // 初始化 FuncMap
@@ -178,6 +182,8 @@ void FuncCall();
 void toBool();
 // 将栈顶元素转化为 i32
 void toInt();
+// 短路求值 type 0 OR , 1 AND
+void shortCircuit(int);
 
 void CompUnit()
 {
@@ -1224,16 +1230,25 @@ void Stmt()
     // 条件语句
     else if (sym.type == 3)
     {
+        int if_block = ++basic_block;
+        int out_block = ++basic_block;
+
         nextsym();
         if (sym.type != 9)
         {
             throw "Error";
         }
 
+        exec_block_stack.push(if_block);
+        out_block_stack.push(out_block);
+
         nest_layer++;
         nextsym();
         Cond();
         nest_layer--;
+
+        exec_block_stack.pop();
+        out_block_stack.pop();
 
         if (sym.type != 10)
         {
@@ -1246,9 +1261,6 @@ void Stmt()
             throw "Error";
         }
         exp_stack.pop();
-
-        int if_block = ++basic_block;
-        int out_block = ++basic_block;
 
         PrintSpace();
         fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, if_block, out_block);
@@ -1297,21 +1309,31 @@ void Stmt()
     // 循环语句
     else if (sym.type == 5)
     {
+        int cond_block = ++basic_block;
+        int while_block = ++basic_block;
+        int out_block = ++basic_block;
+
         nextsym();
         if (sym.type != 9)
         {
             throw "Error";
         }
 
-        int cond_block = ++basic_block;
         PrintSpace();
 
         fprintf(fp_ir, "br label %%basic_block_%d\n", cond_block);
         fprintf(fp_ir, "basic_block_%d:\n", cond_block);
+
+        exec_block_stack.push(while_block);
+        out_block_stack.push(out_block);
+
         nest_layer++;
         nextsym();
         Cond();
         nest_layer--;
+
+        exec_block_stack.pop();
+        out_block_stack.pop();
 
         if (sym.type != 10)
         {
@@ -1325,8 +1347,6 @@ void Stmt()
         }
         exp_stack.pop();
 
-        int while_block = ++basic_block;
-        int out_block = ++basic_block;
         loop_stack.push(out_block);
         loop_stack.push(cond_block);
 
@@ -2020,18 +2040,11 @@ void LAndExp()
         {
             break;
         }
-        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-        memset(exp_stack_tmp, 0, sizeof(ExpItem));
-        exp_stack_tmp->type = 2;
-        exp_stack_tmp->value = sym.type;
-        exp_stack_tmp->have_real_value = false;
-        exp_stack.push(*exp_stack_tmp);
-        free(exp_stack_tmp);
+        // 与运算短路求值
+        shortCircuit(1);
         nextsym();
         EqExp();
         toBool();
-
-        BitOperation();
     }
 }
 
@@ -2044,17 +2057,10 @@ void LOrExp()
         {
             break;
         }
-        exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-        memset(exp_stack_tmp, 0, sizeof(ExpItem));
-        exp_stack_tmp->type = 2;
-        exp_stack_tmp->value = sym.type;
-        exp_stack_tmp->have_real_value = false;
-        exp_stack.push(*exp_stack_tmp);
-        free(exp_stack_tmp);
+        // 或运算短路求值
+        shortCircuit(0);
         nextsym();
         LAndExp();
-
-        BitOperation();
     }
 }
 
@@ -2260,55 +2266,6 @@ void CmpOperation()
     else
     {
         fprintf(fp_ir, "%%x%d\n", num2.value);
-    }
-}
-
-// 处理与或运算
-void BitOperation()
-{
-    ExpItem num1, num2, op;
-
-    num2 = exp_stack.top();
-    if (num2.type != 5)
-    {
-        throw "Error";
-    }
-    exp_stack.pop();
-
-    op = exp_stack.top();
-    if (op.type != 2)
-    {
-        throw "Error";
-    }
-    exp_stack.pop();
-
-    num1 = exp_stack.top();
-    if (num1.type != 5)
-    {
-        throw "Error";
-    }
-    exp_stack.pop();
-
-    exp_stack_tmp = (ExpItem *)malloc(sizeof(ExpItem));
-    memset(exp_stack_tmp, 0, sizeof(ExpItem));
-    exp_stack_tmp->type = 5;
-    exp_stack_tmp->value = ++temp_register;
-    exp_stack_tmp->have_real_value = false;
-    exp_stack.push(*exp_stack_tmp);
-    free(exp_stack_tmp);
-
-    PrintSpace();
-    if (op.value == 30)
-    {
-        fprintf(fp_ir, "%%x%d = and i1 %%x%d, %%x%d\n", temp_register, num1.value, num2.value);
-    }
-    else if (op.value == 31)
-    {
-        fprintf(fp_ir, "%%x%d = or i1 %%x%d, %%x%d\n", temp_register, num1.value, num2.value);
-    }
-    else
-    {
-        throw "Error";
     }
 }
 
@@ -2520,4 +2477,27 @@ void toInt()
 
     PrintSpace();
     fprintf(fp_ir, "%%x%d = zext i1 %%x%d to i32\n", temp_register, num.value);
+}
+
+// 短路求值 type 0 OR , 1 AND
+void shortCircuit(int type)
+{
+    ExpItem num = exp_stack.top();
+
+    if (num.type != 5)
+    {
+        throw "Error";
+    }
+    exp_stack.pop();
+
+    if (type == 0)
+    {
+        PrintSpace();
+        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", num.value, exec_block_stack.top(), cond_block_stack.top());
+    }
+    else
+    {
+        PrintSpace();
+        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", num.value, cond_block_stack.top(), out_block_stack.top());
+    }
 }
