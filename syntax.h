@@ -2040,8 +2040,11 @@ void LAndExp()
         {
             break;
         }
+        cond_block_stack.push(++basic_block);
         // 与运算短路求值
         shortCircuit(1);
+        fprintf(fp_ir, "basic_block_%d:\n", basic_block);
+
         nextsym();
         EqExp();
         toBool();
@@ -2057,8 +2060,11 @@ void LOrExp()
         {
             break;
         }
+        cond_block_stack.push(++basic_block);
         // 或运算短路求值
         shortCircuit(0);
+        fprintf(fp_ir, "basic_block_%d:\n", basic_block);
+        
         nextsym();
         LAndExp();
     }
