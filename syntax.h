@@ -428,7 +428,7 @@ void ConstDef()
             fprintf(fp_ir, "%%x%d = getelementptr [%d x i32], [%d x i32]* %%x%d, i32 0, i32 0\n",
                     ++temp_register, var_in_def->array_proper.size, var_in_def->array_proper.size, var_in_def->register_num);
             PrintSpace();
-            fprintf(fp_ir, "call void @memset(i32* %%x%d,i32 0,i32 %d)\n", temp_register, var_in_def->array_proper.size);
+            fprintf(fp_ir, "call void @memset(i32* %%x%d,i32 0,i32 %d)\n", temp_register, var_in_def->array_proper.size * 4);
             if (have_nonzero)
             {
                 for (int i = 0; i < var_in_def->array_proper.size; i++)
@@ -694,6 +694,11 @@ void VarDef()
         {
             PrintSpace();
             fprintf(fp_ir, "%%x%d = alloca [%d x i32]\n", var_in_def->register_num, var_in_def->array_proper.size);
+            PrintSpace();
+            fprintf(fp_ir, "%%x%d = getelementptr [%d x i32], [%d x i32]* %%x%d, i32 0, i32 0\n",
+                    ++temp_register, var_in_def->array_proper.size, var_in_def->array_proper.size, var_in_def->register_num);
+            PrintSpace();
+            fprintf(fp_ir, "call void @memset(i32* %%x%d,i32 0,i32 %d)\n", temp_register, var_in_def->array_proper.size * 4);
         }
 
         nextsym();
@@ -2064,7 +2069,7 @@ void LOrExp()
         // 或运算短路求值
         shortCircuit(0);
         fprintf(fp_ir, "basic_block_%d:\n", basic_block);
-        
+
         nextsym();
         LAndExp();
     }

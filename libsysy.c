@@ -1,6 +1,7 @@
 /* libsysy.c */
 #include "libsysy.h"
 #include <stdio.h>
+#include <string.h>
 /* Input & output functions */
 int getint() {
     int t;
