@@ -1236,7 +1236,7 @@ void Stmt()
     else if (sym.type == 3)
     {
         int if_block = ++basic_block;
-        int out_block = ++basic_block;
+        int out_block;
 
         nextsym();
         if (sym.type != 9)
@@ -1245,13 +1245,13 @@ void Stmt()
         }
 
         exec_block_stack.push(if_block);
-        out_block_stack.push(out_block);
 
         nest_layer++;
         nextsym();
         Cond();
         nest_layer--;
 
+        out_block = out_block_stack.top();
         exec_block_stack.pop();
         out_block_stack.pop();
 
@@ -1259,16 +1259,6 @@ void Stmt()
         {
             throw "Error";
         }
-
-        ExpItem cond = exp_stack.top();
-        if (cond.type != 5)
-        {
-            throw "Error";
-        }
-        exp_stack.pop();
-
-        PrintSpace();
-        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, if_block, out_block);
 
         // if bolck
         fprintf(fp_ir, "basic_block_%d:\n", if_block);
@@ -1316,7 +1306,7 @@ void Stmt()
     {
         int cond_block = ++basic_block;
         int while_block = ++basic_block;
-        int out_block = ++basic_block;
+        int out_block;
 
         nextsym();
         if (sym.type != 9)
@@ -1330,13 +1320,13 @@ void Stmt()
         fprintf(fp_ir, "basic_block_%d:\n", cond_block);
 
         exec_block_stack.push(while_block);
-        out_block_stack.push(out_block);
 
         nest_layer++;
         nextsym();
         Cond();
         nest_layer--;
 
+        out_block = out_block_stack.top();
         exec_block_stack.pop();
         out_block_stack.pop();
 
@@ -1345,18 +1335,8 @@ void Stmt()
             throw "Error";
         }
 
-        ExpItem cond = exp_stack.top();
-        if (cond.type != 5)
-        {
-            throw "Error";
-        }
-        exp_stack.pop();
-
         loop_stack.push(out_block);
         loop_stack.push(cond_block);
-
-        PrintSpace();
-        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", cond.value, while_block, out_block);
 
         // while bolck
         fprintf(fp_ir, "basic_block_%d:\n", while_block);
@@ -2048,7 +2028,6 @@ void LAndExp()
         cond_block_stack.push(++basic_block);
         // 与运算短路求值
         shortCircuit(1);
-        fprintf(fp_ir, "basic_block_%d:\n", basic_block);
 
         nextsym();
         EqExp();
@@ -2058,20 +2037,27 @@ void LAndExp()
 
 void LOrExp()
 {
+    int out_block = ++basic_block;
+    out_block_stack.push(out_block);
     LAndExp();
+    // 或运算短路求值
+    shortCircuit(0);
+
     while (true)
     {
         if (sym.type != 31)
         {
             break;
         }
-        cond_block_stack.push(++basic_block);
-        // 或运算短路求值
-        shortCircuit(0);
-        fprintf(fp_ir, "basic_block_%d:\n", basic_block);
+        fprintf(fp_ir, "basic_block_%d:\n", out_block_stack.top());
+        out_block_stack.pop();
 
+        out_block = ++basic_block;
+        out_block_stack.push(out_block);
         nextsym();
         LAndExp();
+        // 或运算短路求值
+        shortCircuit(0);
     }
 }
 
@@ -2504,11 +2490,13 @@ void shortCircuit(int type)
     if (type == 0)
     {
         PrintSpace();
-        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", num.value, exec_block_stack.top(), cond_block_stack.top());
+        fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", num.value, exec_block_stack.top(), out_block_stack.top());
     }
     else
     {
         PrintSpace();
         fprintf(fp_ir, "br i1 %%x%d ,label %%basic_block_%d, label %%basic_block_%d\n", num.value, cond_block_stack.top(), out_block_stack.top());
+        fprintf(fp_ir, "basic_block_%d:\n", cond_block_stack.top());
+        cond_block_stack.pop();
     }
 }
