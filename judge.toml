@@ -1,7 +1,8 @@
-[jobs.short_circuit]
+[jobs.mdarray]
 
 image = {source = "dockerfile", path = "."}
 
 run = [
+  "cat $input",
   "./compiler $input $ir",
 ]
