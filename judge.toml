@@ -1,4 +1,4 @@
-[jobs.mdarray]
+[jobs.shortCircuit]
 
 image = {source = "dockerfile", path = "."}
 
