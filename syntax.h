@@ -2199,7 +2199,7 @@ void NotOperation(ExpItem num)
 
     // 将非运算的结果转化为 i32
     PrintSpace();
-    fprintf(fp_ir, "%%x%d = zext i1 %%x%d to i32", temp_register, temp_register - 1);
+    fprintf(fp_ir, "%%x%d = zext i1 %%x%d to i32\n", temp_register, temp_register - 1);
 }
 
 // 处理比较运算
